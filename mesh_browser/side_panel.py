@@ -3,7 +3,7 @@ import open3d.visualization.gui as gui
 
 class SidePanel:
     def __init__(self, em, display_modes, on_folder_selected,
-                 on_mesh_selected, on_display_mode_changed):
+                 on_mesh_selected, on_display_mode_changed, on_analyze_clicked):
         self.widget = gui.Vert(0.5 * em, gui.Margins(em, em, em, em))
 
         # Database folder
@@ -42,6 +42,17 @@ class SidePanel:
         self.info_label = gui.Label("")
         self.widget.add_child(self.info_label)
 
+        # Shape analyzer
+        self.widget.add_child(gui.Label("")) # Spacing
+        self.widget.add_child(gui.Label("Shape analyzer:"))
+        self.analyze_button = gui.Button("Analyze shapes -> Excel")
+        self.analyze_button.set_on_clicked(on_analyze_clicked)
+        self.widget.add_child(self.analyze_button)
+
+        # Shape analyzer info text (mesh statistics, messages)
+        self.info_label_analyzer = gui.Label("")
+        self.widget.add_child(self.info_label_analyzer)
+
     def set_database_path(self, text):
         self.database_label.text = text
 
@@ -55,3 +66,6 @@ class SidePanel:
 
     def set_info(self, text):
         self.info_label.text = text
+
+    def set_info_analyzer(self, text):
+        self.info_label_analyzer.text = text

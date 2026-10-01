@@ -6,7 +6,7 @@ import open3d.visualization.gui as gui
 
 from . import config
 from .database import is_valid_database, list_subfolders, list_meshes
-from .mesh_utils import load_mesh, mesh_stats
+from .mesh_utils import load_mesh, mesh_stats, analyze_database
 from .side_panel import SidePanel
 from .viewer import MeshViewer
 
@@ -28,6 +28,7 @@ class MeshBrowserApp:
             on_folder_selected=self._on_folder_selected,
             on_mesh_selected=self._on_mesh_selected,
             on_display_mode_changed=self.viewer.set_display_mode,
+            on_analyze_clicked=self._on_analyze_clicked,
         )
 
         self.window.add_child(self.viewer.widget)
@@ -84,6 +85,13 @@ class MeshBrowserApp:
         n_vertices, n_triangles = mesh_stats(mesh)
         self.panel.set_info(f"Vertices: {n_vertices}\nTriangles: {n_triangles}")
 
+    # --- Shape analyzer ---
+    def _on_analyze_clicked(self):
+        try:
+            n_rows = analyze_database(self.database_dir)
+            self.panel.set_info_analyzer(f"Shape analyzer: wrote {n_rows} rows to Excel.\n")
+        except Exception as e:
+            self.panel.set_info_analyzer(f"Shape analyzer: error occurred - {e}\nIs excel file open? Close it and try again.\n")
 
 def run():
     gui.Application.instance.initialize()

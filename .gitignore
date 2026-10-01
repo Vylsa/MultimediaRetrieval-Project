@@ -160,6 +160,7 @@ env.bak/
 venv.bak/
 
 ShapeDatabase_INFOMR-master
+notes.txt
 
 # Spyder project settings
 .spyderproject

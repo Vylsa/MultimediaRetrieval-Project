@@ -1,7 +1,10 @@
 """Loading meshes and preparing them for display. No GUI code here."""
+import os
 
 import numpy as np
 import open3d as o3d
+from openpyxl import Workbook
+from .database import list_subfolders, list_meshes
 
 
 def load_mesh(path):
@@ -39,3 +42,25 @@ def make_double_sided(mesh):
     double.triangles = o3d.utility.Vector3iVector(all_triangles)
     double.compute_vertex_normals()
     return double
+
+def analyze_database(database_dir, output_path="analyze_sheet.xlsx", limit=200):
+    """Write the names and folder names of the first `limit` meshes in the database
+    to an Excel file. An existing file is overwritten. Returns the number of rows written."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "analyze_sheet"
+    ws.append(["Mesh name", "Class"])
+
+    count = 0
+    for folder in list_subfolders(database_dir):
+        folder_path = os.path.join(database_dir, folder)
+        for mesh_name in list_meshes(folder_path):
+            if count >= limit:
+                break
+            ws.append([mesh_name, folder])
+            count += 1
+        if count >= limit:
+            break
+
+    wb.save(output_path)  # overwrites the file if it already exists
+    return count
