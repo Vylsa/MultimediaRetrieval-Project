@@ -1,12 +1,13 @@
 """The main window: connects the side panel, the 3D view and the database."""
 
 import os
+import threading
 
 import open3d.visualization.gui as gui
 
 from . import config
 from .database import is_valid_database, list_subfolders, list_meshes
-from .mesh_utils import load_mesh, mesh_stats, analyze_database
+from .mesh_utils import load_mesh, mesh_stats, analyze_steps, analyze_database
 from .side_panel import SidePanel
 from .viewer import MeshViewer
 
@@ -15,6 +16,7 @@ class MeshBrowserApp:
     def __init__(self, database_dir):
         self.database_dir = database_dir
         self.current_folder = None
+        self._analyzing = False
 
         self.window = gui.Application.instance.create_window(
             config.WINDOW_TITLE, config.WINDOW_WIDTH, config.WINDOW_HEIGHT
@@ -85,13 +87,50 @@ class MeshBrowserApp:
         n_vertices, n_triangles = mesh_stats(mesh)
         self.panel.set_info(f"Vertices: {n_vertices}\nTriangles: {n_triangles}")
 
-    # --- Shape analyzer ---
+        # --- Shape analyzer ---
     def _on_analyze_clicked(self):
+        if self._analyzing:
+            return
+        self._analyzing = True
+        self.panel.set_analyze_enabled(False)
+        self.panel.set_info_analyzer("Analyzing...")
+        threading.Thread(target=self._run_analysis, daemon=True).start()
+
+    def _run_analysis(self):
+        """Runs on a background thread. Must not touch any widgets directly."""
+        app = gui.Application.instance
+
+        def on_progress(done, total):
+            if done % 5 == 0 or done == total:
+                app.post_to_main_thread(
+                    self.window, lambda: self._update_progress(done, total)
+                )
+
         try:
-            n_rows = analyze_database(self.database_dir)
-            self.panel.set_info_analyzer(f"Shape analyzer: wrote {n_rows} rows to Excel.\n")
+            n = analyze_database(self.database_dir, "analyze_sheet.xlsx",
+                                 limit=800, progress_callback=on_progress)
+            message = f"Wrote {n} meshes to analyze_sheet.xlsx"
+        except PermissionError:
+            message = "Could not write analyze_sheet.xlsx.\nIs it open in Excel?"
         except Exception as e:
-            self.panel.set_info_analyzer(f"Shape analyzer: error occurred - {e}\nIs excel file open? Close it and try again.\n")
+            message = f"Analysis failed: {e}"
+
+        app.post_to_main_thread(self.window, lambda: self._finish_analysis(message))
+
+    def _update_progress(self, done, total):
+        """Runs on the main thread."""
+        fraction = done / total if total else 1.0
+        filled = int(fraction * 20)
+        bar = "#" * filled + "-" * (20 - filled)
+        self.panel.set_info_analyzer(f"Analyzing...\n[{bar}] {int(fraction * 100)}%\n{done}/{total}")
+        self.window.post_redraw()
+
+    def _finish_analysis(self, message):
+        """Runs on the main thread."""
+        self._analyzing = False
+        self.panel.set_analyze_enabled(True)
+        self.panel.set_info_analyzer(message)
+        self.window.post_redraw()
 
 def run():
     gui.Application.instance.initialize()

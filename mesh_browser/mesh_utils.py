@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 import open3d as o3d
+import threading
 from openpyxl import Workbook
 from .database import list_subfolders, list_meshes
 
@@ -43,24 +44,41 @@ def make_double_sided(mesh):
     double.compute_vertex_normals()
     return double
 
-def analyze_database(database_dir, output_path="analyze_sheet.xlsx", limit=200):
-    """Write the names and folder names of the first `limit` meshes in the database
-    to an Excel file. An existing file is overwritten. Returns the number of rows written."""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "analyze_sheet"
-    ws.append(["Mesh name", "Class"])
-
-    count = 0
+def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
+    """Generator: analyzes the meshes one at a time and yields (done, total) after each.
+    The Excel file is written when the generator is exhausted."""
+    items = []
     for folder in list_subfolders(database_dir):
         folder_path = os.path.join(database_dir, folder)
         for mesh_name in list_meshes(folder_path):
-            if count >= limit:
-                break
-            ws.append([mesh_name, folder])
-            count += 1
-        if count >= limit:
-            break
+            items.append((folder, mesh_name))
+    if limit is not None:
+        items = items[:limit]
+    total = len(items)
 
-    wb.save(output_path)  # overwrites the file if it already exists
-    return count
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "analyze_sheet"
+    ws.append(["Mesh name", "Class", "Vertices", "Triangles"])
+
+    yield 0, total
+    for i, (folder, mesh_name) in enumerate(items, start=1):
+        mesh = load_mesh(os.path.join(database_dir, folder, mesh_name))
+        if mesh is None:
+            ws.append([mesh_name, folder, "load failed", "load failed"])
+        else:
+            n_vertices, n_triangles = mesh_stats(mesh)
+            ws.append([mesh_name, folder, n_vertices, n_triangles])
+        yield i, total
+
+    wb.save(output_path)  # overwrites an existing file
+
+
+def analyze_database(database_dir, output_path="analyze_sheet.xlsx",
+                     limit=None, progress_callback=None):
+    """Blocking version (handy for tests). Returns the number of meshes analyzed."""
+    total = 0
+    for done, total in analyze_steps(database_dir, output_path, limit):
+        if progress_callback:
+            progress_callback(done, total)
+    return total

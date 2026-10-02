@@ -48,6 +48,8 @@ class SidePanel:
         self.analyze_button = gui.Button("Analyze shapes -> Excel")
         self.analyze_button.set_on_clicked(on_analyze_clicked)
         self.widget.add_child(self.analyze_button)
+        # self.progress_bar = gui.ProgressBar()
+        # self.widget.add_child(self.progress_bar)
 
         # Shape analyzer info text (mesh statistics, messages)
         self.info_label_analyzer = gui.Label("")
@@ -69,3 +71,9 @@ class SidePanel:
 
     def set_info_analyzer(self, text):
         self.info_label_analyzer.text = text
+
+    # def set_progress(self, fraction):
+    #     self.progress_bar.set_value(fraction)
+
+    def set_analyze_enabled(self, enabled):
+        self.analyze_button.enabled = enabled # Important for threading, otherwise the button can be clicked multiple times
