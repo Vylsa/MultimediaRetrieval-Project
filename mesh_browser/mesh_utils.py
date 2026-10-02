@@ -6,6 +6,7 @@ import open3d as o3d
 import threading
 from openpyxl import Workbook
 from .database import list_subfolders, list_meshes
+from .sheet_utils import add_summary_sheet
 
 
 def load_mesh(path):
@@ -101,10 +102,12 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
     ws.append(["Mesh name", "Class", "Vertices", "Triangle faces", "Face types", 
                "Original faces", "Axis-aligned bounding box", "Min X", "Min Y", "Min Z", "Max X", "Max Y", "Max Z"])
 
+    vertex_counts, face_counts, class_counts = [], [], {}
     yield 0, total
     for i, (folder, mesh_name) in enumerate(items, start=1):
         path = os.path.join(database_dir, folder, mesh_name)
         mesh = load_mesh(path)
+        class_counts[folder] = class_counts.get(folder, 0) + 1
 
         try:
             counts = count_face_types(path)
@@ -112,16 +115,19 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
             counts = None  # a malformed file shouldn't abort the whole run
         face_type = classify_faces(counts)
         n_faces = sum(counts.values()) if counts else "n/a"
-        bbox = mesh_bbox(mesh) if mesh is not None else "n/a" * 6
-        bbox_text = "(" + ", ".join(f"{v:.4f}" for v in bbox) + ")"
+        bbox = mesh_bbox(mesh) if mesh is not None else ("n/a",) * 6
+        bbox_text = "(" + ", ".join(f"{v:.4f}" for v in bbox) + ")" if mesh is not None else "n/a"
 
         if mesh is None:
             ws.append([mesh_name, folder, "load failed", "load failed", face_type, n_faces, bbox_text, *bbox])
         else:
             n_vertices, n_triangles = mesh_stats(mesh)
+            vertex_counts.append(n_vertices)
+            face_counts.append(n_triangles)
             ws.append([mesh_name, folder, n_vertices, n_triangles, face_type, n_faces, bbox_text, *bbox])
         yield i, total
 
+    add_summary_sheet(wb, vertex_counts, face_counts, class_counts)
     wb.save(output_path)  # overwrites an existing file
 
 

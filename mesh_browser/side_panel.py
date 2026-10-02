@@ -54,6 +54,7 @@ class SidePanel:
         # Shape analyzer info text (mesh statistics, messages)
         self.info_label_analyzer = gui.Label("")
         self.widget.add_child(self.info_label_analyzer)
+        self.widget.add_child(gui.Label("")) # Spacing
 
     def set_database_path(self, text):
         self.database_label.text = text
