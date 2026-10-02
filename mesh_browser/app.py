@@ -89,6 +89,7 @@ class MeshBrowserApp:
 
         # --- Shape analyzer ---
     def _on_analyze_clicked(self):
+        """Called when the user clicks the 'Analyze' button."""
         if self._analyzing:
             return
         self._analyzing = True

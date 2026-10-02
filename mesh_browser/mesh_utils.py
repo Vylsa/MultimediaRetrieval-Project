@@ -23,6 +23,37 @@ def mesh_stats(mesh):
     triangles = np.asarray(mesh.triangles)
     return vertices.shape[0], triangles.shape[0]
 
+def count_face_types(path):
+    """Read the face definitions straight from the file (Open3D triangulates on load).
+    Returns a dict {vertices_per_face: count}, e.g. {3: 1200, 4: 80}.
+    Returns None for unsupported formats."""
+    ext = os.path.splitext(path)[1].lower()
+    counts = {}
+
+    if ext == ".obj":
+        with open(path, "r", errors="ignore") as f:
+            for line in f:
+                if line.startswith("f "):
+                    n = len(line.split()) - 1  # tokens after the 'f'
+                    counts[n] = counts.get(n, 0) + 1
+        return counts
+
+    return None
+
+
+def classify_faces(counts):
+    """Turn a face count dict into a label."""
+    if not counts:
+        return "unknown"
+    kinds = set(counts)
+    if kinds == {3}:
+        return "triangles"
+    if kinds == {4}:
+        return "quads"
+    if kinds == {3, 4}:
+        return "triangles + quads"
+    return "mixed (n-gons)"
+
 
 def make_double_sided(mesh):
     """Return a copy of the mesh where every triangle also exists facing the other way,
@@ -59,16 +90,25 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "analyze_sheet"
-    ws.append(["Mesh name", "Class", "Vertices", "Triangles"])
+    ws.append(["Mesh name", "Class", "Vertices", "Triangle faces", "Face types", "Original faces"])
 
     yield 0, total
     for i, (folder, mesh_name) in enumerate(items, start=1):
-        mesh = load_mesh(os.path.join(database_dir, folder, mesh_name))
+        path = os.path.join(database_dir, folder, mesh_name)
+        mesh = load_mesh(path)
+
+        try:
+            counts = count_face_types(path)
+        except Exception:
+            counts = None  # a malformed file shouldn't abort the whole run
+        face_type = classify_faces(counts)
+        n_faces = sum(counts.values()) if counts else "n/a"
+
         if mesh is None:
-            ws.append([mesh_name, folder, "load failed", "load failed"])
+            ws.append([mesh_name, folder, "load failed", "load failed", face_type, n_faces])
         else:
             n_vertices, n_triangles = mesh_stats(mesh)
-            ws.append([mesh_name, folder, n_vertices, n_triangles])
+            ws.append([mesh_name, folder, n_vertices, n_triangles, face_type, n_faces])
         yield i, total
 
     wb.save(output_path)  # overwrites an existing file
