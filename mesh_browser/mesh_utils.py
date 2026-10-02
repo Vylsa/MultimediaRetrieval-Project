@@ -23,6 +23,14 @@ def mesh_stats(mesh):
     triangles = np.asarray(mesh.triangles)
     return vertices.shape[0], triangles.shape[0]
 
+def mesh_bbox(mesh):
+    """Axis-aligned bounding box of a mesh.
+    Returns (min_x, min_y, min_z, max_x, max_y, max_z)."""
+    bbox = mesh.get_axis_aligned_bounding_box()
+    min_b = bbox.get_min_bound()
+    max_b = bbox.get_max_bound()
+    return (*map(float, min_b), *map(float, max_b))
+
 def count_face_types(path):
     """Read the face definitions straight from the file (Open3D triangulates on load).
     Returns a dict {vertices_per_face: count}, e.g. {3: 1200, 4: 80}.
@@ -90,7 +98,8 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
     wb = Workbook()
     ws = wb.active
     ws.title = "analyze_sheet"
-    ws.append(["Mesh name", "Class", "Vertices", "Triangle faces", "Face types", "Original faces"])
+    ws.append(["Mesh name", "Class", "Vertices", "Triangle faces", "Face types", 
+               "Original faces", "Axis-aligned bounding box", "Min X", "Min Y", "Min Z", "Max X", "Max Y", "Max Z"])
 
     yield 0, total
     for i, (folder, mesh_name) in enumerate(items, start=1):
@@ -103,12 +112,14 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
             counts = None  # a malformed file shouldn't abort the whole run
         face_type = classify_faces(counts)
         n_faces = sum(counts.values()) if counts else "n/a"
+        bbox = mesh_bbox(mesh) if mesh is not None else "n/a" * 6
+        bbox_text = "(" + ", ".join(f"{v:.4f}" for v in bbox) + ")"
 
         if mesh is None:
-            ws.append([mesh_name, folder, "load failed", "load failed", face_type, n_faces])
+            ws.append([mesh_name, folder, "load failed", "load failed", face_type, n_faces, bbox_text, *bbox])
         else:
             n_vertices, n_triangles = mesh_stats(mesh)
-            ws.append([mesh_name, folder, n_vertices, n_triangles, face_type, n_faces])
+            ws.append([mesh_name, folder, n_vertices, n_triangles, face_type, n_faces, bbox_text, *bbox])
         yield i, total
 
     wb.save(output_path)  # overwrites an existing file
