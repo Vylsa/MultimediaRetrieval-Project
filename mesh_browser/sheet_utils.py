@@ -97,3 +97,58 @@ def add_summary_sheet(wb, vertex_counts, face_counts, class_counts, bins=20):
     _write_stats(ws, face_counts, 4, stats_row, "Face statistics")
     ws.column_dimensions["A"].width = 28
     ws.column_dimensions["D"].width = 28
+
+def _iqr_fences(values):
+    """Lower and upper outlier fences (Q1 - 1.5*IQR, Q3 + 1.5*IQR)."""
+    q1, q3 = np.percentile(np.asarray(values, dtype=float), [25, 75])
+    iqr = q3 - q1
+    return q1 - 1.5 * iqr, q3 + 1.5 * iqr
+
+
+def _write_shape_list(ws, rows):
+    ws.append(["Mesh name", "Class", "Vertices", "Faces", "Reason"])
+    for row in rows:
+        ws.append(row)
+    if not rows:
+        ws.append(["(none)"])
+    for col, width in zip("ABCDE", (30, 24, 12, 12, 40)):
+        ws.column_dimensions[col].width = width
+
+
+def add_shape_lists(wb, records, min_count=100):
+    """Two extra sheets: shapes with fewer than `min_count` vertices and/or faces,
+    and shapes that are 1.5*IQR outliers in vertices and/or faces."""
+    small, outliers = [], []
+
+    if records:
+        v_low, v_high = _iqr_fences([r["vertices"] for r in records])
+        f_low, f_high = _iqr_fences([r["faces"] for r in records])
+
+    for r in records:
+        # Under-sampled shapes
+        reasons = []
+        if r["vertices"] < min_count:
+            reasons.append(f"vertices < {min_count}")
+        if r["faces"] < min_count:
+            reasons.append(f"faces < {min_count}")
+        if reasons:
+            small.append([r["name"], r["folder"], r["vertices"], r["faces"], "; ".join(reasons)])
+
+        # IQR outliers
+        reasons = []
+        if r["vertices"] > v_high:
+            reasons.append("vertices above upper fence")
+        elif r["vertices"] < v_low:
+            reasons.append("vertices below lower fence")
+        if r["faces"] > f_high:
+            reasons.append("faces above upper fence")
+        elif r["faces"] < f_low:
+            reasons.append("faces below lower fence")
+        if reasons:
+            outliers.append([r["name"], r["folder"], r["vertices"], r["faces"], "; ".join(reasons)])
+
+    small.sort(key=lambda row: row[2])                   # fewest vertices first
+    outliers.sort(key=lambda row: row[2], reverse=True)  # most vertices first
+
+    _write_shape_list(wb.create_sheet("under_100"), small)
+    _write_shape_list(wb.create_sheet("iqr_outliers"), outliers)

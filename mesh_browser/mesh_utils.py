@@ -6,7 +6,7 @@ import open3d as o3d
 import threading
 from openpyxl import Workbook
 from .database import list_subfolders, list_meshes
-from .sheet_utils import add_summary_sheet
+from .sheet_utils import add_summary_sheet, add_shape_lists
 
 
 def load_mesh(path):
@@ -103,6 +103,7 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
                "Original faces", "Axis-aligned bounding box", "Min X", "Min Y", "Min Z", "Max X", "Max Y", "Max Z"])
 
     vertex_counts, face_counts, class_counts = [], [], {}
+    records = []
     yield 0, total
     for i, (folder, mesh_name) in enumerate(items, start=1):
         path = os.path.join(database_dir, folder, mesh_name)
@@ -123,11 +124,15 @@ def analyze_steps(database_dir, output_path="analyze_sheet.xlsx", limit=None):
         else:
             n_vertices, n_triangles = mesh_stats(mesh)
             vertex_counts.append(n_vertices)
-            face_counts.append(n_triangles)
+            if isinstance(n_faces, int):
+                face_counts.append(n_faces)
+                records.append({"name": mesh_name, "folder": folder,
+                                "vertices": n_vertices, "faces": n_faces})
             ws.append([mesh_name, folder, n_vertices, n_triangles, face_type, n_faces, bbox_text, *bbox])
         yield i, total
 
     add_summary_sheet(wb, vertex_counts, face_counts, class_counts)
+    add_shape_lists(wb, records)
     wb.save(output_path)  # overwrites an existing file
 
 
