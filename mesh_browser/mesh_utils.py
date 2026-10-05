@@ -7,7 +7,9 @@ import threading
 from openpyxl import Workbook
 from .database import list_subfolders, list_meshes
 from .sheet_utils import add_summary_sheet, add_shape_lists
+from . import config
 
+import heapq
 
 def load_mesh(path):
     """Load a mesh from a file. Returns None if the file couldn't be loaded."""
@@ -141,6 +143,187 @@ def analyze_database(database_dir, output_path="analyze_sheet.xlsx",
     """Blocking version (handy for tests). Returns the number of meshes analyzed."""
     total = 0
     for done, total in analyze_steps(database_dir, output_path, limit):
+        if progress_callback:
+            progress_callback(done, total)
+    return total
+
+
+def clean_mesh(mesh):
+    """Merge duplicated vertices and remove degenerate/unused geometry (in place).
+    OBJ files often duplicate vertices at UV/normal seams, which inflates the
+    vertex count and causes cracks when subdividing."""
+    mesh = mesh.remove_duplicated_vertices()
+    mesh = mesh.remove_duplicated_triangles()
+    mesh = mesh.remove_degenerate_triangles()
+    mesh = mesh.remove_unreferenced_vertices()
+    return mesh
+
+
+'''Resample version using Open3D's built-in subdivision method "subdivide_midpoint". Works but overshoots the target vertex count. sometimes resulting
+in a mesh that needs to be decimated. Using the inbuilt decimation method after this subdivide leads to errors as
+the decimation will preserve flat serfaces, which is exactly what we get when we subdivide using the midpoint method.'''
+'''
+def resample_mesh(mesh, min_v=config.MIN_VERTICES, max_v=config.MAX_VERTICES,
+                  target_v=config.TARGET_VERTICES, max_iter=10):
+    """Subdivide or decimate a mesh until its vertex count is within [min_v, max_v].
+    Returns (resampled mesh, list of actions taken), e.g. ["subdivide", "decimate"]."""
+    actions = []
+    for _ in range(max_iter):
+        n_vertices = len(mesh.vertices)
+        if min_v <= n_vertices <= max_v:
+            break
+        if n_vertices < min_v:
+            # Splits every triangle into 4 using the edge midpoints, shape stays the same
+            mesh = mesh.subdivide_midpoint(number_of_iterations=1)
+            actions.append("subdivide")
+        else:
+            # Decimation targets a triangle count, so estimate it from the current ratio
+            ratio = len(mesh.triangles) / n_vertices
+            mesh = mesh.simplify_quadric_decimation(
+                target_number_of_triangles=int(target_v * ratio))
+            actions.append("decimate")
+        mesh = clean_mesh(mesh)
+    return mesh, actions
+'''
+
+'''resample version using the custom subdivision method "split_longest_edges"'''
+def resample_mesh(mesh, min_v=config.MIN_VERTICES, max_v=config.MAX_VERTICES,
+                  target_v=config.TARGET_VERTICES, max_iter=10):
+    """Refine or decimate a mesh until its vertex count is within [min_v, max_v].
+    Returns (resampled mesh, list of actions taken), e.g. ["split longest edges"]."""
+    actions = []
+    for _ in range(max_iter):
+        n_vertices = len(mesh.vertices)
+        if min_v <= n_vertices <= max_v:
+            break
+        if n_vertices < min_v:
+            # Splits the longest edges first and stops exactly at target_v, so it never overshoots
+            mesh = split_longest_edges(mesh, target_v)
+            actions.append("split longest edges")
+        else:
+            # Only reached for meshes that were too dense to begin with
+            ratio = len(mesh.triangles) / n_vertices
+            mesh = mesh.simplify_quadric_decimation(
+                target_number_of_triangles=int(target_v * ratio))
+            actions.append("decimate")
+        mesh = clean_mesh(mesh)
+    return mesh, actions
+
+def split_longest_edges(mesh, target_v=config.TARGET_VERTICES):
+    """Repeatedly split the longest edge of the mesh at its midpoint until the mesh
+    has target_v vertices. Each split adds exactly one vertex, so the largest
+    triangles are refined first and the result lands exactly on target_v.
+    Expects a cleaned mesh (shared vertices), otherwise cracks appear at seams."""
+    vertices = list(np.asarray(mesh.vertices))
+    triangles = [list(t) for t in np.asarray(mesh.triangles)]
+
+    def key(a, b):
+        return (a, b) if a < b else (b, a)
+
+    def push(a, b):
+        length = np.linalg.norm(vertices[a] - vertices[b])
+        heapq.heappush(heap, (-length, key(a, b)))  # negative, so the longest comes out first
+
+    # Which triangles use each edge
+    edge_tris = {}
+    for t, (a, b, c) in enumerate(triangles):
+        for u, v in ((a, b), (b, c), (c, a)):
+            edge_tris.setdefault(key(u, v), []).append(t)
+
+    heap = []
+    for a, b in edge_tris:
+        push(a, b)
+
+    while len(vertices) < target_v and heap:
+        _, edge = heapq.heappop(heap)
+        if edge not in edge_tris:
+            continue  # this edge was already split
+        a, b = edge
+        m = len(vertices)
+        vertices.append((vertices[a] + vertices[b]) / 2)
+
+        for t in edge_tris.pop(edge):
+            tri = triangles[t]
+            # Rotate so the split edge is tri[0]-tri[1], keeping the winding order
+            i = next(k for k in range(3) if key(tri[k], tri[(k + 1) % 3]) == edge)
+            p, q, c = tri[i], tri[(i + 1) % 3], tri[(i + 2) % 3]
+
+            # Split the triangle into (p, m, c) and (m, q, c)
+            new_t = len(triangles)
+            triangles[t] = [p, m, c]
+            triangles.append([m, q, c])
+
+            # Edge q-c now belongs to the new triangle instead of t
+            qc = edge_tris[key(q, c)]
+            qc[qc.index(t)] = new_t
+            edge_tris.setdefault(key(p, m), []).append(t)
+            edge_tris.setdefault(key(m, q), []).append(new_t)
+            edge_tris.setdefault(key(m, c), []).extend([t, new_t])
+            push(m, c)
+
+        push(a, m)
+        push(m, b)
+
+    result = o3d.geometry.TriangleMesh()
+    result.vertices = o3d.utility.Vector3dVector(np.array(vertices))
+    result.triangles = o3d.utility.Vector3iVector(np.array(triangles, dtype=np.int32))
+    return result
+
+def resample_steps(database_dir, output_dir=config.REFINED_DATABASE_DIR,
+                   log_path="resample_sheet.xlsx", limit=None):
+    """Generator: resamples the meshes one at a time and yields (done, total) after each.
+    Every mesh is written to output_dir with the same folder structure, also the ones
+    that were already in range, so output_dir is a complete database.
+    The Excel log is written when the generator is exhausted."""
+    items = []
+    for folder in list_subfolders(database_dir):
+        folder_path = os.path.join(database_dir, folder)
+        for mesh_name in list_meshes(folder_path):
+            items.append((folder, mesh_name))
+    if limit is not None:
+        items = items[:limit]
+    total = len(items)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "resample_sheet"
+    ws.append(["Mesh name", "Class", "Vertices before", "Vertices after",
+               "Triangles before", "Triangles after", "Actions", "In range"])
+
+    yield 0, total
+    for i, (folder, mesh_name) in enumerate(items, start=1):
+        path = os.path.join(database_dir, folder, mesh_name)
+        mesh = load_mesh(path)
+
+        if mesh is None:
+            ws.append([mesh_name, folder, "load failed", "", "", "", "", ""])
+            yield i, total
+            continue
+
+        mesh = clean_mesh(mesh)
+        v_before, t_before = mesh_stats(mesh)
+        mesh, actions = resample_mesh(mesh)
+        v_after, t_after = mesh_stats(mesh)
+        in_range = config.MIN_VERTICES <= v_after <= config.MAX_VERTICES
+
+        out_folder = os.path.join(output_dir, folder)
+        os.makedirs(out_folder, exist_ok=True)
+        mesh.compute_vertex_normals()
+        mesh.triangle_normals = o3d.utility.Vector3dVector()  # OBJ can't store these
+        o3d.io.write_triangle_mesh(os.path.join(out_folder, mesh_name), mesh)
+
+        ws.append([mesh_name, folder, v_before, v_after, t_before, t_after,
+                   ", ".join(actions) if actions else "none", "yes" if in_range else "no"])
+        yield i, total
+
+    wb.save(log_path)  # overwrites an existing file
+
+
+def resample_database(database_dir, output_dir=config.REFINED_DATABASE_DIR,
+                      log_path="resample_sheet.xlsx", limit=None, progress_callback=None):
+    """Blocking version (handy for tests). Returns the number of meshes processed."""
+    total = 0
+    for done, total in resample_steps(database_dir, output_dir, log_path, limit):
         if progress_callback:
             progress_callback(done, total)
     return total

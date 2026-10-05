@@ -1,5 +1,7 @@
 DATABASE_DIR = "ShapeDatabase_INFOMR-master"
+#DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
 
+REFINED_DATABASE_DIR = "ShapeDatabase`_INFOMR-master_refined"
 
 MESH_EXTENSIONS = (".obj",)
  
@@ -21,4 +23,9 @@ DISPLAY_MODES = [DISPLAY_SHADED, DISPLAY_SHADED_WIREFRAME, DISPLAY_WIREFRAME]
  
 # Wireframe appearance (R, G, B, A) and line thickness in pixels
 WIREFRAME_COLOR = [0, 0, 0, 1]
-WIREFRAME_LINE_WIDTH = 1.0
+WIREFRAME_LINE_WIDTH = 5.0
+
+# Super/subsampling:
+MIN_VERTICES = 5000
+MAX_VERTICES = 10000
+TARGET_VERTICES = 7500

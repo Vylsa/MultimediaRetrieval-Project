@@ -36,6 +36,8 @@ class MeshViewer:
 
         # Add both the surface and the wireframe; the display mode decides which are visible
         scene.add_geometry(MESH_NAME, make_double_sided(mesh), self.mesh_material)
+        #scene.add_geometry(MESH_NAME, mesh, self.mesh_material)
+
         wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
         scene.add_geometry(WIREFRAME_NAME, wireframe, self.line_material)
         self._apply_display_mode()
