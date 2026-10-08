@@ -357,6 +357,19 @@ def normalize_steps(database_dir, output_dir=config.NORMALIZED_DATABASE_DIR, lim
         o3d.io.write_triangle_mesh(os.path.join(out_folder, mesh_name), mesh)
         yield i, total
 
+def surface_barycenter(mesh):
+    """Area-weighted mean of the triangle barycenters (centroid of the surface)."""
+    v = np.asarray(mesh.vertices)
+    t = np.asarray(mesh.triangles)
+    p0, p1, p2 = v[t[:, 0]], v[t[:, 1]], v[t[:, 2]]
+
+    areas = 0.5 * np.linalg.norm(np.cross(p1 - p0, p2 - p0), axis=1)
+    centroids = (p0 + p1 + p2) / 3.0
+
+    total = areas.sum()
+    if total == 0:                      # degenerate mesh, fall back to the vertex mean
+        return v.mean(axis=0)
+    return (centroids * areas[:, None]).sum(axis=0) / total
 
 def normalize_database(database_dir, output_dir=config.NORMALIZED_DATABASE_DIR,
                        limit=None, progress_callback=None):
@@ -372,7 +385,7 @@ def normalize_mesh(mesh):
     so its axis-aligned bounding box fits tightly in a unit cube (largest side = 1).
     Modifies the mesh in place and also returns it."""
     # 1. Barycenter -> origin (Open3D's get_center() is the mean of the vertices)
-    mesh.translate(-mesh.get_center())
+    mesh.translate(-surface_barycenter(mesh))
 
     # 2. Uniform scale: the longest side of the bounding box becomes exactly 1
     bbox = mesh.get_axis_aligned_bounding_box()
