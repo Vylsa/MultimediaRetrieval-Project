@@ -3,7 +3,7 @@ import open3d.visualization.gui as gui
 
 class SidePanel:
     def __init__(self, em, display_modes, on_folder_selected,
-                 on_mesh_selected, on_display_mode_changed, on_analyze_clicked):
+                 on_mesh_selected, on_display_mode_changed, on_analyze_clicked, on_normalize_clicked):
         self.widget = gui.Vert(0.5 * em, gui.Margins(em, em, em, em))
 
         # Database folder
@@ -56,6 +56,14 @@ class SidePanel:
         self.widget.add_child(self.info_label_analyzer)
         self.widget.add_child(gui.Label("")) # Spacing
 
+        # Normalizer
+        self.widget.add_child(gui.Label("Normalizer:"))
+        self.normalize_button = gui.Button("Normalize shapes")
+        self.normalize_button.set_on_clicked(on_normalize_clicked)
+        self.widget.add_child(self.normalize_button)
+        self.info_label_normalizer = gui.Label("")
+        self.widget.add_child(self.info_label_normalizer)
+
     def set_database_path(self, text):
         self.database_label.text = text
 
@@ -78,3 +86,9 @@ class SidePanel:
 
     def set_analyze_enabled(self, enabled):
         self.analyze_button.enabled = enabled # Important for threading, otherwise the button can be clicked multiple times
+
+    def set_info_normalizer(self, text):
+        self.info_label_normalizer.text = text
+
+    def set_normalize_enabled(self, enabled):
+        self.normalize_button.enabled = enabled

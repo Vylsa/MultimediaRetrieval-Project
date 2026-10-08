@@ -327,3 +327,57 @@ def resample_database(database_dir, output_dir=config.REFINED_DATABASE_DIR,
         if progress_callback:
             progress_callback(done, total)
     return total
+
+def normalize_steps(database_dir, output_dir=config.NORMALIZED_DATABASE_DIR, limit=None):
+    """Generator: normalizes the meshes one at a time and yields (done, total) after each.
+    Every mesh is written to output_dir with the same folder structure."""
+    items = []
+    for folder in list_subfolders(database_dir):
+        folder_path = os.path.join(database_dir, folder)
+        for mesh_name in list_meshes(folder_path):
+            items.append((folder, mesh_name))
+    if limit is not None:
+        items = items[:limit]
+    total = len(items)
+
+    yield 0, total
+    for i, (folder, mesh_name) in enumerate(items, start=1):
+        mesh = load_mesh(os.path.join(database_dir, folder, mesh_name))
+
+        if mesh is None:
+            print(f"Skipped (load failed): {folder}/{mesh_name}")
+            yield i, total
+            continue
+
+        mesh = normalize_mesh(mesh)
+
+        out_folder = os.path.join(output_dir, folder)
+        os.makedirs(out_folder, exist_ok=True)
+        mesh.triangle_normals = o3d.utility.Vector3dVector()  # OBJ can't store these
+        o3d.io.write_triangle_mesh(os.path.join(out_folder, mesh_name), mesh)
+        yield i, total
+
+
+def normalize_database(database_dir, output_dir=config.NORMALIZED_DATABASE_DIR,
+                       limit=None, progress_callback=None):
+    """Blocking version (handy for tests). Returns the number of meshes processed."""
+    total = 0
+    for done, total in normalize_steps(database_dir, output_dir, limit):
+        if progress_callback:
+            progress_callback(done, total)
+    return total
+
+def normalize_mesh(mesh):
+    """Translate the mesh so its barycenter is at the origin, then scale it uniformly
+    so its axis-aligned bounding box fits tightly in a unit cube (largest side = 1).
+    Modifies the mesh in place and also returns it."""
+    # 1. Barycenter -> origin (Open3D's get_center() is the mean of the vertices)
+    mesh.translate(-mesh.get_center())
+
+    # 2. Uniform scale: the longest side of the bounding box becomes exactly 1
+    bbox = mesh.get_axis_aligned_bounding_box()
+    longest_side = float(np.max(bbox.get_extent()))
+    if longest_side > 0:
+        # center=(0,0,0) so the barycenter stays at the origin while scaling
+        mesh.scale(1.0 / longest_side, center=(0.0, 0.0, 0.0))
+    return mesh
