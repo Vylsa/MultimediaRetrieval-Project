@@ -108,11 +108,11 @@ class MeshBrowserApp:
                 )
 
         try:
-            n = analyze_database(self.database_dir, "analyze_sheet.xlsx",
+            n = analyze_database(self.database_dir, "analyze_sheet_resampled.xlsx",
                                  limit=None, progress_callback=on_progress)
-            message = f"Wrote {n} meshes to analyze_sheet.xlsx"
+            message = f"Wrote {n} meshes to analyze_sheet_resampled.xlsx"
         except PermissionError:
-            message = "Could not write analyze_sheet.xlsx.\nIs it open in Excel?"
+            message = "Could not write analyze_sheet_resampled.xlsx.\nIs it open in Excel?"
         except Exception as e:
             message = f"Analysis failed: {e}"
 

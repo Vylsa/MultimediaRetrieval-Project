@@ -1,7 +1,7 @@
-DATABASE_DIR = "ShapeDatabase_INFOMR-master"
-#DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
+# DATABASE_DIR = "ShapeDatabase_INFOMR-master"
+DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
 
-REFINED_DATABASE_DIR = "ShapeDatabase`_INFOMR-master_refined"
+REFINED_DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
 
 MESH_EXTENSIONS = (".obj",)
  
