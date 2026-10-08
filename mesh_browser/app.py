@@ -7,7 +7,7 @@ import open3d.visualization.gui as gui
 
 from . import config
 from .database import is_valid_database, list_subfolders, list_meshes
-from .mesh_utils import load_mesh, mesh_stats, analyze_steps, analyze_database
+from .mesh_utils import load_mesh, mesh_stats, analyze_steps, analyze_database, normalize_database
 from .side_panel import SidePanel
 from .viewer import MeshViewer
 
@@ -17,6 +17,7 @@ class MeshBrowserApp:
         self.database_dir = database_dir
         self.current_folder = None
         self._analyzing = False
+        self._normalizing = False
 
         self.window = gui.Application.instance.create_window(
             config.WINDOW_TITLE, config.WINDOW_WIDTH, config.WINDOW_HEIGHT
@@ -31,6 +32,7 @@ class MeshBrowserApp:
             on_mesh_selected=self._on_mesh_selected,
             on_display_mode_changed=self.viewer.set_display_mode,
             on_analyze_clicked=self._on_analyze_clicked,
+            on_normalize_clicked=self._on_normalize_clicked,
         )
 
         self.window.add_child(self.viewer.widget)
@@ -108,11 +110,11 @@ class MeshBrowserApp:
                 )
 
         try:
-            n = analyze_database(self.database_dir, "analyze_sheet.xlsx",
+            n = analyze_database(self.database_dir, "normalized_sheet_resampled.xlsx",
                                  limit=None, progress_callback=on_progress)
-            message = f"Wrote {n} meshes to analyze_sheet.xlsx"
+            message = f"Wrote {n} meshes to normalized_sheet_resampled.xlsx"
         except PermissionError:
-            message = "Could not write analyze_sheet.xlsx.\nIs it open in Excel?"
+            message = "Could not write normalized_sheet_resampled.xlsx.\nIs it open in Excel?"
         except Exception as e:
             message = f"Analysis failed: {e}"
 
@@ -131,6 +133,49 @@ class MeshBrowserApp:
         self._analyzing = False
         self.panel.set_analyze_enabled(True)
         self.panel.set_info_analyzer(message)
+        self.window.post_redraw()
+
+    # --- Normalizer ---
+    def _on_normalize_clicked(self):
+        if self._normalizing:
+            return
+        self._normalizing = True
+        self.panel.set_normalize_enabled(False)
+        self.panel.set_info_normalizer("Normalizing...")
+        threading.Thread(target=self._run_normalization, daemon=True).start()
+
+    def _run_normalization(self):
+        """Runs on a background thread. Must not touch any widgets directly."""
+        app = gui.Application.instance
+
+        def on_progress(done, total):
+            if done % 5 == 0 or done == total:
+                app.post_to_main_thread(
+                    self.window, lambda: self._update_normalize_progress(done, total)
+                )
+
+        try:
+            n = normalize_database(self.database_dir, config.NORMALIZED_DATABASE_DIR,
+                                   progress_callback=on_progress)
+            message = f"Normalized {n} meshes to {config.NORMALIZED_DATABASE_DIR}"
+        except Exception as e:
+            message = f"Normalization failed: {e}"
+
+        app.post_to_main_thread(self.window, lambda: self._finish_normalization(message))
+
+    def _update_normalize_progress(self, done, total):
+        """Runs on the main thread."""
+        fraction = done / total if total else 1.0
+        filled = int(fraction * 20)
+        bar = "#" * filled + "-" * (20 - filled)
+        self.panel.set_info_normalizer(f"Normalizing...\n[{bar}] {int(fraction * 100)}%\n{done}/{total}")
+        self.window.post_redraw()
+
+    def _finish_normalization(self, message):
+        """Runs on the main thread."""
+        self._normalizing = False
+        self.panel.set_normalize_enabled(True)
+        self.panel.set_info_normalizer(message)
         self.window.post_redraw()
 
 def run():
