@@ -381,3 +381,8 @@ def normalize_mesh(mesh):
         # center=(0,0,0) so the barycenter stays at the origin while scaling
         mesh.scale(1.0 / longest_side, center=(0.0, 0.0, 0.0))
     return mesh
+
+def compute_descriptors(mesh):
+    """Compute a set of descriptors for the mesh."""
+    surface_area = mesh.get_surface_area()
+    volume = mesh.get_volume()
