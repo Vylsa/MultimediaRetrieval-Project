@@ -419,8 +419,10 @@ def flip_mesh(mesh):
     and mirror that axis if f < 0, so most of the mass ends up on the positive side."""
     vertices = np.asarray(mesh.vertices)
     triangles = np.asarray(mesh.triangles)
-    centroids = vertices[triangles].mean(axis=1)               # (T, 3)
-    f = np.sum(np.sign(centroids) * centroids ** 2, axis=0)    # (3,)
+    tri = vertices[triangles]
+    areas = 0.5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+    centroids = tri.mean(axis=1)
+    f = np.sum(areas[:, None] * np.sign(centroids) * centroids ** 2, axis=0)
     signs = np.where(f < 0, -1.0, 1.0)
 
     mesh.vertices = o3d.utility.Vector3dVector(vertices * signs)
