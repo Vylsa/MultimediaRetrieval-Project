@@ -10,7 +10,7 @@ from mesh_browser.config import DATABASE_DIR
 
 
 
-MESH_PATH = os.path.join(DATABASE_DIR, "Tree", "D00200.obj")
+MESH_PATH = os.path.join(DATABASE_DIR, "Vase", "M547.obj")
 
 OUTPUT_DIR = os.path.join(DATABASE_DIR, "0_resampling_tests")
 

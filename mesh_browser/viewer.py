@@ -1,5 +1,6 @@
 """The 3D view that displays a mesh."""
 
+import numpy as np
 import open3d as o3d
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
@@ -9,6 +10,21 @@ from .mesh_utils import make_double_sided
 
 MESH_NAME = "mesh"
 WIREFRAME_NAME = "wireframe"
+AXES_NAME = "axes"
+
+AXIS_COLORS = [[0.9, 0.1, 0.1],     # x: red
+               [0.1, 0.8, 0.1],     # y: green
+               [0.1, 0.3, 0.9]]     # z: blue
+
+
+def make_axes(length):
+    """Three colored lines from the origin along +x, +y and +z."""
+    points = np.array([[0, 0, 0], [length, 0, 0], [0, length, 0], [0, 0, length]], dtype=float)
+    lines = np.array([[0, 1], [0, 2], [0, 3]])
+    axes = o3d.geometry.LineSet(o3d.utility.Vector3dVector(points),
+                                o3d.utility.Vector2iVector(lines))
+    axes.colors = o3d.utility.Vector3dVector(AXIS_COLORS)
+    return axes
 
 
 class MeshViewer:
@@ -27,6 +43,13 @@ class MeshViewer:
         self.line_material.base_color = config.WIREFRAME_COLOR
         self.line_material.line_width = config.WIREFRAME_LINE_WIDTH
 
+        # Material for the axes: white base color, so the per-line colors are shown unchanged
+        self.axes_material = rendering.MaterialRecord()
+        self.axes_material.shader = "unlitLine"
+        self.axes_material.base_color = [1.0, 1.0, 1.0, 1.0]
+        self.axes_material.line_width = 2.0
+
+        self.axis_labels = []
         self.display_mode = config.DISPLAY_MODES[0]
 
     def show_mesh(self, mesh):
@@ -36,14 +59,35 @@ class MeshViewer:
 
         # Add both the surface and the wireframe; the display mode decides which are visible
         scene.add_geometry(MESH_NAME, make_double_sided(mesh), self.mesh_material)
-        #scene.add_geometry(MESH_NAME, mesh, self.mesh_material)
 
         wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
         scene.add_geometry(WIREFRAME_NAME, wireframe, self.line_material)
-        self._apply_display_mode()
 
         bounds = mesh.get_axis_aligned_bounding_box()
-        self.widget.setup_camera(60, bounds, bounds.get_center())
+        self._add_axes(bounds)
+        self._apply_display_mode()
+
+        # Frame the mesh and the origin, so the axes stay in view for unnormalized meshes too
+        view_points = np.vstack([np.asarray(bounds.get_box_points()), np.zeros((1, 3))])
+        view_bounds = o3d.geometry.AxisAlignedBoundingBox.create_from_points(
+            o3d.utility.Vector3dVector(view_points))
+        self.widget.setup_camera(60, view_bounds, bounds.get_center())
+
+    def _add_axes(self, bounds):
+        """x/y/z axes through the origin, long enough to stick out of the mesh."""
+        corners = np.vstack([bounds.get_min_bound(), bounds.get_max_bound()])
+        length = 0.9 * max(float(np.max(bounds.get_extent())), float(np.max(np.abs(corners))))
+        #self.widget.scene.add_geometry(AXES_NAME, make_axes(length), self.axes_material)
+        self.widget.scene.add_geometry(AXES_NAME, make_axes(1), self.axes_material)
+
+        # Text labels at the axis tips (widget overlays, so clear_geometry() doesn't remove them)
+        for label in self.axis_labels:
+            self.widget.remove_3d_label(label)
+        self.axis_labels = []
+        for name, direction, color in zip("XYZ", np.eye(3), AXIS_COLORS):
+            label = self.widget.add_3d_label(direction * length * 1.08, name)
+            label.color = gui.Color(*color)
+            self.axis_labels.append(label)
 
     def set_display_mode(self, mode):
         """Switch between the modes in config.DISPLAY_MODES. Kept when a new mesh is loaded."""
