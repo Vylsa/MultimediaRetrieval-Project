@@ -367,6 +367,8 @@ def normalize_database(database_dir, output_dir=config.NORMALIZED_DATABASE_DIR,
             progress_callback(done, total)
     return total
 
+'''
+# normalize mesh function from step 2, so only centering and scaling
 def normalize_mesh(mesh):
     """Translate the mesh so its barycenter is at the origin, then scale it uniformly
     so its axis-aligned bounding box fits tightly in a unit cube (largest side = 1).
@@ -380,4 +382,70 @@ def normalize_mesh(mesh):
     if longest_side > 0:
         # center=(0,0,0) so the barycenter stays at the origin while scaling
         mesh.scale(1.0 / longest_side, center=(0.0, 0.0, 0.0))
+    return mesh
+''' 
+def center_mesh(mesh):
+    """Step 1: translate the mesh so its barycenter is at the origin."""
+    mesh.translate(-mesh.get_center())
+    return mesh
+
+
+def principal_axes(vertices):
+    """PCA of a point set. Returns (eigenvalues, eigenvectors) sorted from largest
+    to smallest eigenvalue; the eigenvectors are the columns of the 3x3 matrix."""
+    cov = np.cov(vertices, rowvar=False)          # 3x3 covariance matrix
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)  # eigh: symmetric matrix, ascending order
+    order = np.argsort(eigenvalues)[::-1]
+    return eigenvalues[order], eigenvectors[:, order]
+
+
+def align_mesh(mesh):
+    """Step 2: rotate the mesh so the major eigenvector lies along x and the
+    medium one along y. Expects a centered mesh."""
+    _, eigvecs = principal_axes(np.asarray(mesh.vertices))
+    e1, e2 = eigvecs[:, 0], eigvecs[:, 1]
+    # Use the cross product instead of the third eigenvector, so the frame is
+    # always right-handed (a pure rotation, never an accidental mirror)
+    e3 = np.cross(e1, e2)
+    # Rows are the new axes, so R @ p gives the coordinates (p.e1, p.e2, p.e3)
+    R = np.vstack([e1, e2, e3])
+    mesh.rotate(R, center=(0.0, 0.0, 0.0))
+    return mesh
+
+
+def flip_mesh(mesh):
+    """Step 3: moment test. For each axis, compute
+    f = sum over triangles of sign(c) * c^2, with c the triangle centroid coordinate,
+    and mirror that axis if f < 0, so most of the mass ends up on the positive side."""
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    centroids = vertices[triangles].mean(axis=1)               # (T, 3)
+    f = np.sum(np.sign(centroids) * centroids ** 2, axis=0)    # (3,)
+    signs = np.where(f < 0, -1.0, 1.0)
+
+    mesh.vertices = o3d.utility.Vector3dVector(vertices * signs)
+    # Mirroring an odd number of axes turns the mesh inside out (normals point
+    # inward), so reverse the winding order of every triangle to compensate
+    if np.prod(signs) < 0:
+        mesh.triangles = o3d.utility.Vector3iVector(
+            np.ascontiguousarray(triangles[:, ::-1]).astype(np.int32))
+    return mesh
+
+
+def scale_mesh(mesh):
+    """Step 4: scale uniformly so the longest side of the AABB becomes 1."""
+    longest_side = float(np.max(mesh.get_axis_aligned_bounding_box().get_extent()))
+    if longest_side > 0:
+        mesh.scale(1.0 / longest_side, center=(0.0, 0.0, 0.0))
+    return mesh
+
+
+def normalize_mesh(mesh):
+    """Four-step normalization: center, align with PCA, flip with the moment test,
+    then scale to the unit cube. Modifies the mesh in place and also returns it."""
+    center_mesh(mesh)
+    align_mesh(mesh)
+    flip_mesh(mesh)
+    scale_mesh(mesh)
+    mesh.compute_vertex_normals()  # flipping changed the geometry, so recompute
     return mesh
