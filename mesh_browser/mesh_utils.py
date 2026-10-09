@@ -451,3 +451,28 @@ def normalize_mesh(mesh):
     scale_mesh(mesh)
     mesh.compute_vertex_normals()  # flipping changed the geometry, so recompute
     return mesh
+
+
+def mesh_volume(mesh):
+    """Volume of a mesh, computed by summing the signed volumes of the tetrahedra
+    formed by the barycenter and each triangle. Also works for meshes that are not
+    watertight (unlike Open3D's get_volume): holes are effectively closed by
+    'coning' them to the barycenter, which gives a good approximation."""
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    if len(triangles) == 0:
+        return 0.0
+
+    barycenter = vertices.mean(axis=0)
+
+    # Triangle corners relative to the barycenter (the shared apex of all tetrahedra)
+    a = vertices[triangles[:, 0]] - barycenter
+    b = vertices[triangles[:, 1]] - barycenter
+    c = vertices[triangles[:, 2]] - barycenter
+
+    # Signed volume of each tetrahedron: (a . (b x c)) / 6
+    tet_volumes = np.einsum("ij,ij->i", a, np.cross(b, c)) / 6.0
+
+    # Sum the signed volumes, then take abs so the result doesn't depend on
+    # whether the triangles wind inward or outward
+    return float(abs(tet_volumes.sum()))
