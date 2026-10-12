@@ -4,10 +4,12 @@ import os
 import numpy as np
 import open3d as o3d
 import threading
+import pymeshlab
 from openpyxl import Workbook
 from .database import list_subfolders, list_meshes
 from .sheet_utils import add_summary_sheet, add_shape_lists
 from . import config
+from collections import defaultdict
 
 import heapq
 
@@ -381,6 +383,151 @@ def normalize_mesh(mesh):
         # center=(0,0,0) so the barycenter stays at the origin while scaling
         mesh.scale(1.0 / longest_side, center=(0.0, 0.0, 0.0))
     return mesh
+
+### VOLUME SHIT ###
+
+def _run_filter(ms, new_name, old_name, **kwargs):
+    """PyMeshLab renamed its filters between versions, so try the new name, then the old one."""
+    fn = getattr(ms, new_name, None) or getattr(ms, old_name, None)
+    if fn is None:
+        raise AttributeError(f"Neither {new_name} nor {old_name} exists in your PyMeshLab version")
+    fn(**kwargs)
+
+
+def fix_non_manifold(mesh):
+    """Remove non-manifold edges and vertices with MeshLab. Returns a new Open3D mesh.
+    Edges are repaired by removing faces (this creates holes, which fill_holes closes
+    afterwards). Vertices are repaired by splitting them."""
+    ms = pymeshlab.MeshSet()
+    ms.add_mesh(pymeshlab.Mesh(
+        vertex_matrix=np.asarray(mesh.vertices, dtype=np.float64),
+        face_matrix=np.asarray(mesh.triangles, dtype=np.int32)))
+
+    _run_filter(ms, "meshing_repair_non_manifold_edges",
+                "repair_non_manifold_edges_by_removing_faces",
+                **({"method": "Remove Faces"}
+                   if hasattr(ms, "meshing_repair_non_manifold_edges") else {}))
+    _run_filter(ms, "meshing_repair_non_manifold_vertices",
+            "repair_non_manifold_vertices_by_splitting", vertdispratio=0.0)
+    _run_filter(ms, "meshing_remove_unreferenced_vertices",
+                "remove_unreferenced_vertices")
+
+    m = ms.current_mesh()
+    out = o3d.geometry.TriangleMesh()
+    out.vertices = o3d.utility.Vector3dVector(m.vertex_matrix())
+    out.triangles = o3d.utility.Vector3iVector(m.face_matrix().astype(np.int32))
+    return out
+
+def orient_consistently(mesh):
+    """Make all triangle windings agree with their neighbours, then flip each connected
+    piece so it faces outward (positive signed volume). Returns a new mesh."""
+    v = np.asarray(mesh.vertices)
+    t = np.asarray(mesh.triangles).copy()
+    m = len(t)
+
+    # Which triangles use each (undirected) edge
+    edge_tris = defaultdict(list)
+    for i, (a, b, c) in enumerate(t):
+        for u, w in ((a, b), (b, c), (c, a)):
+            edge_tris[(min(u, w), max(u, w))].append(i)
+
+    # Connect triangles only across manifold edges (exactly 2 triangles).
+    # Edges shared by 3+ triangles have no consistent answer, so we skip them.
+    neighbours = [[] for _ in range(m)]
+    for (u, w), tris in edge_tris.items():
+        if len(tris) == 2:
+            i, j = tris
+            neighbours[i].append((j, u, w))
+            neighbours[j].append((i, u, w))
+
+    def has_directed(tri, u, w):
+        a, b, c = tri
+        return (a, b) == (u, w) or (b, c) == (u, w) or (c, a) == (u, w)
+
+    visited = np.zeros(m, dtype=bool)
+    for s in range(m):
+        if visited[s]:
+            continue
+        visited[s] = True
+        component, stack = [s], [s]
+        while stack:
+            i = stack.pop()
+            for j, u, w in neighbours[i]:
+                if visited[j]:
+                    continue
+                visited[j] = True
+                # Neighbours must traverse the shared edge in opposite directions.
+                # If both go the same way, flip j by reversing its vertex order.
+                if has_directed(t[i], u, w) == has_directed(t[j], u, w):
+                    t[j] = t[j, ::-1].copy()
+                component.append(j)
+                stack.append(j)
+
+        # Outward-facing: signed volume of this piece should be positive
+        idx = np.array(component)
+        p0, p1, p2 = v[t[idx, 0]], v[t[idx, 1]], v[t[idx, 2]]
+        if np.einsum("ij,ij->i", p0, np.cross(p1, p2)).sum() < 0:
+            t[idx] = t[idx, ::-1].copy()
+
+    out = o3d.geometry.TriangleMesh()
+    out.vertices = o3d.utility.Vector3dVector(v)
+    out.triangles = o3d.utility.Vector3iVector(t.astype(np.int32))
+    return out
+
+def boundary_loops(mesh):
+    """Find hole boundaries. Returns a list of closed vertex loops [v1, v2, ..., vn].
+    An edge is a boundary edge if its reverse direction is not used by any triangle."""
+    t = np.asarray(mesh.triangles)
+    directed = set()
+    for a, b, c in t:
+        directed.update(((a, b), (b, c), (c, a)))
+
+    nxt = defaultdict(list)
+    for a, b in directed:
+        if (b, a) not in directed:
+            nxt[a].append(b)
+
+    loops = []
+    while nxt:
+        start = next(iter(nxt))
+        loop, cur, closed = [start], start, True
+        while True:
+            if cur not in nxt:                 # dead end: boundary doesn't close up
+                closed = False
+                break
+            n = nxt[cur].pop()
+            if not nxt[cur]:
+                del nxt[cur]
+            if n == start:
+                break
+            loop.append(n)
+            cur = n
+        if closed and len(loop) >= 3:
+            loops.append(loop)
+    return loops
+
+
+def fill_holes(mesh):
+    """Close each hole with a triangle fan around the barycentre of its boundary vertices.
+    Returns (new mesh, number of holes filled)."""
+    loops = boundary_loops(mesh)
+    if not loops:
+        return mesh, 0
+
+    vertices = [p for p in np.asarray(mesh.vertices)]
+    triangles = [list(t) for t in np.asarray(mesh.triangles)]
+
+    for loop in loops:
+        c = len(vertices)
+        vertices.append(np.asarray(mesh.vertices)[loop].mean(axis=0))
+        for i in range(len(loop)):
+            u, w = loop[i], loop[(i + 1) % len(loop)]   # boundary edge u -> w
+            triangles.append([w, u, c])                 # reversed, so winding matches
+
+    filled = o3d.geometry.TriangleMesh()
+    filled.vertices = o3d.utility.Vector3dVector(np.array(vertices))
+    filled.triangles = o3d.utility.Vector3iVector(np.array(triangles, dtype=np.int32))
+    return filled, len(loops)
 
 def compute_descriptors(mesh):
     """Compute a set of descriptors for the mesh."""

@@ -1,9 +1,10 @@
 import os
 import random
 import open3d as o3d
+import numpy as np
 
 DATABASE_DIR = "normalized_database"   # <- point this at your database
-LIMIT = 200
+LIMIT = 1
 EXTENSIONS = (".obj", ".off", ".ply", ".stl")
 
 # Collect all meshes, then take a random sample so the 200 aren't all from one class
@@ -16,9 +17,23 @@ for folder in sorted(os.listdir(DATABASE_DIR)):
         if name.lower().endswith(EXTENSIONS):
             items.append((folder, name))
 
-random.seed(0)
+# random.seed(0)
 if len(items) > LIMIT:
-    items = random.sample(items, LIMIT)
+    # items = random.sample(items, LIMIT)
+    items = items[:LIMIT]   # take first N instead of random sample, for reproducibility
+
+def merge_with_tolerance(mesh, decimals=6):
+    """Merge vertices whose positions agree after rounding to `decimals` decimals."""
+    v = np.round(np.asarray(mesh.vertices), decimals)
+    uniq, inverse = np.unique(v, axis=0, return_inverse=True)
+    t = inverse.reshape(-1)[np.asarray(mesh.triangles)]
+    out = o3d.geometry.TriangleMesh()
+    out.vertices = o3d.utility.Vector3dVector(uniq)
+    out.triangles = o3d.utility.Vector3iVector(t.astype(np.int32))
+    out.remove_duplicated_triangles()
+    out.remove_degenerate_triangles()
+    out.remove_unreferenced_vertices()
+    return out
 
 problems = []   # meshes with problems that hole filling will NOT fix
 with_holes = 0
@@ -37,10 +52,12 @@ for i, (folder, name) in enumerate(items, start=1):
 
     # Merge duplicated vertices first, otherwise every UV/normal seam looks like a
     # crack and nearly every mesh fails the manifold checks
-    mesh.remove_duplicated_vertices()
-    mesh.remove_duplicated_triangles()
-    mesh.remove_degenerate_triangles()
-    mesh.remove_unreferenced_vertices()
+    # mesh.remove_duplicated_vertices()
+    # mesh.remove_duplicated_triangles()
+    # mesh.remove_degenerate_triangles()
+    # mesh.remove_unreferenced_vertices()
+    mesh = merge_with_tolerance(mesh, decimals=6)
+
 
     # allow_boundary_edges=True: open boundaries (holes) are fine here, since we want
     # to find what pymeshlab can't fill
