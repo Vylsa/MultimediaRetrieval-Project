@@ -383,32 +383,3 @@ def normalize_mesh(mesh):
         # center=(0,0,0) so the barycenter stays at the origin while scaling
         mesh.scale(1.0 / longest_side, center=(0.0, 0.0, 0.0))
     return mesh
-
-def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=None):
-    """Generator: normalizes the meshes one at a time and yields (done, total) after each.
-    Every mesh is written to output_dir with the same folder structure."""
-    items = []
-    for folder in list_subfolders(database_dir):
-        folder_path = os.path.join(database_dir, folder)
-        for mesh_name in list_meshes(folder_path):
-            items.append((folder, mesh_name))
-    if limit is not None:
-        items = items[:limit]
-    total = len(items)
-
-    yield 0, total
-    for i, (folder, mesh_name) in enumerate(items, start=1):
-        mesh = load_mesh(os.path.join(database_dir, folder, mesh_name))
-
-        if mesh is None:
-            print(f"Skipped (load failed): {folder}/{mesh_name}")
-            yield i, total
-            continue
-
-        mesh = normalize_mesh(mesh)
-
-        out_folder = os.path.join(output_dir, folder)
-        os.makedirs(out_folder, exist_ok=True)
-        mesh.triangle_normals = o3d.utility.Vector3dVector()  # OBJ can't store these
-        o3d.io.write_triangle_mesh(os.path.join(out_folder, mesh_name), mesh)
-        yield i, total

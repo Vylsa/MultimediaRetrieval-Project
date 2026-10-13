@@ -6,6 +6,50 @@ import mesh_browser.mesh_utils as utils
 
 from collections import defaultdict
 
+from functools import cached_property
+
+class MeshDescriptors:
+    def __init__(self, mesh, max_hole_size=200):
+        self.mesh = mesh                      # normalized, unrepaired
+        self.max_hole_size = max_hole_size
+
+    @cached_property
+    def area(self):                           # the area descriptor (unrepaired)
+        return surface_area(self.mesh)
+
+    @cached_property
+    def _repair(self):                        # slow step, runs once
+        return repair_mesh(o3d.geometry.TriangleMesh(self.mesh))
+
+    @property
+    def repaired(self):
+        return self._repair[0]
+
+    @cached_property
+    def repaired_area(self):                  # same surface as the volume
+        return surface_area(self.repaired)
+
+    @cached_property
+    def volume(self):
+        return volume_centered(self.repaired)
+
+    @cached_property
+    def quality(self):
+        if self.repaired_area <= 0:
+            return "zero area"
+        if is_closed_and_consistent(self.repaired):
+            return "closed"
+        if edge_report(self.repaired)["unbalanced"] == 0:
+            return "balanced"
+        return "open"
+
+    @cached_property
+    def compactness(self):
+        if self.repaired_area <= 0:
+            return None
+        c = 36 * np.pi * self.volume ** 2 / self.repaired_area ** 3
+        return float(c) if 0.0 <= c <= 1.0 else None
+
 def _run_filter(ms, new_name, old_name, **kwargs):
     fn = getattr(ms, new_name, None) or getattr(ms, old_name, None)
     if fn is None:
@@ -296,5 +340,20 @@ def volume_centered(mesh):
 
 def compute_descriptors(mesh):
     """Compute a set of descriptors for the mesh."""
-    surface_area = mesh.get_surface_area()
-    volume = mesh.get_volume()
+    return {
+        "surface_area": mesh.get_surface_area(),
+        "volume": volume_centered(mesh),
+    }
+
+def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=None):
+    items = [(f, m) for f in utils.list_subfolders(database_dir)
+             for m in utils.list_meshes(os.path.join(database_dir, f))]
+    if limit is not None:
+        items = items[:limit]
+    yield 0, len(items)
+    for i, (folder, name) in enumerate(items, start=1):
+        mesh = utils.load_mesh(os.path.join(database_dir, folder, name))
+        row = compute_descriptors(mesh) if mesh is not None else {}
+        # append [name, folder, *row.values()] to the worksheet here
+        yield i, len(items)
+    # save the workbook here
