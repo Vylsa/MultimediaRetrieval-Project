@@ -1,6 +1,7 @@
 import numpy as np
 from collections import defaultdict
 import open3d as o3d
+import pymeshlab
 import mesh_browser.mesh_utils as utils
 import os
 from mesh_browser.config import DATABASE_DIR
@@ -17,14 +18,14 @@ def is_closed_and_consistent(mesh):
     return all(n == 1 and count.get((w, u), 0) == 1 for (u, w), n in count.items())
 
 def repair_mesh(mesh):
-    mesh = utils.clean_mesh(mesh)               # merge seams, remove junk
-    mesh = utils.fix_non_manifold(mesh)         # remove non-manifold edges/vertices
-    # Do NOT call clean_mesh again here: it would re-merge the vertices that
-    # the non-manifold fix just split apart, and bring the problem back.
-    mesh = utils.orient_consistently(mesh)      # make all windings agree
-    mesh, n_holes = utils.fill_holes(mesh)      # close holes, including the ones the fix created
-    mesh = utils.orient_consistently(mesh)      # re-check outward direction once closed
-    return mesh, n_holes
+    mesh = utils.clean_mesh(mesh)                 # merge seams, remove junk
+    mesh = utils.fix_non_manifold(mesh)           # MeshLab needs manifold input to close holes
+    mesh = utils.orient_consistently(mesh)
+    mesh = utils.meshlab_close_holes(mesh)        # pass 1: MeshLab closes the holes it can
+    mesh = utils.orient_consistently(mesh)
+    mesh, n_holes = utils.fill_holes(mesh)        # pass 2: fan for whatever is still open
+    mesh = utils.orient_consistently(mesh)        # pass 3: final orientation
+    return mesh, n_holes                          # n_holes = holes the fan still had to fill
 
 def surface_area(mesh):
     """Total surface area: the sum of all triangle areas."""
@@ -136,76 +137,18 @@ def failure_reasons(mesh):
     dup_dir = sum(1 for n in count.values() if n > 1)                # same direction twice
     return open_edges, dup_dir
 
-# # stats = []
-# # for folder, name in items:
-# #     mesh = o3d.io.read_triangle_mesh(os.path.join(DATABASE_DIR, folder, name))
-# #     if not mesh.has_triangles():
-# #         continue
-# #     mesh, n_holes = repair_mesh(mesh)
-# #     if not is_closed_and_consistent(mesh):
-# #         o, d = failure_reasons(mesh)
-# #         stats.append((folder, name, n_holes, o, d))
-
-# # print("still open only:", sum(1 for s in stats if s[3] > 0 and s[4] == 0))
-# # print("duplicate direction only:", sum(1 for s in stats if s[3] == 0 and s[4] > 0))
-# # print("both:", sum(1 for s in stats if s[3] > 0 and s[4] > 0))
-# # holes = sorted(s[2] for s in stats)
-# # print("holes filled in unreliable meshes: median", holes[len(holes)//2], "max", holes[-1])
-
-# import random
-
-# random.seed(0)                                   # same seed as the check script
-# sample = random.sample(items, 200)               # `items` = list of (folder, name) as before
-
-# def old_repair(mesh):
-#     mesh = utils.clean_mesh(mesh)
-#     mesh = utils.orient_consistently(mesh)
-#     mesh, n = utils.fill_holes(mesh)
-#     return utils.orient_consistently(mesh), n
-
-# old_ok = new_ok = 0
-# changes, holes_new = [], []
-# for folder, name in sample:
-#     path = os.path.join(DATABASE_DIR, folder, name)
-#     base = o3d.io.read_triangle_mesh(path)
-#     if not base.has_triangles():
-#         continue
-#     m_old, _ = old_repair(o3d.geometry.TriangleMesh(base))
-#     m_new, n_holes = repair_mesh(o3d.geometry.TriangleMesh(base))
-#     ok_old, ok_new = is_closed_and_consistent(m_old), is_closed_and_consistent(m_new)
-#     old_ok += ok_old
-#     new_ok += ok_new
-#     holes_new.append(n_holes)
-#     if ok_old and ok_new:                        # volume change on meshes reliable in both
-#         v0, v1 = mesh_volume(m_old), mesh_volume(m_new)
-#         if v0 > 0:
-#             changes.append(abs(v1 - v0) / v0)
-
-# print(f"reliable before: {old_ok}, after: {new_ok}")
-# print(f"holes filled after fix: median {sorted(holes_new)[len(holes_new)//2]}, max {max(holes_new)}")
-# if changes:
-#     print(f"volume change on meshes reliable in both: median {np.median(changes):.2%}, max {max(changes):.2%}")
-
-def volume_by_occupancy(mesh, n=64, nsamples=3):
-    """Approximate volume by counting grid points that lie inside the shape."""
-    scene = o3d.t.geometry.RaycastingScene()
-    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
-
-    bbox = mesh.get_axis_aligned_bounding_box()
-    centre = bbox.get_center()
-    side = float(np.max(bbox.get_extent()))
-    if side == 0:
-        return 0.0
-    step = side / n
-    axis = (np.arange(n) + 0.5) * step - side / 2
-    gx, gy, gz = np.meshgrid(axis, axis, axis, indexing="ij")
-    grid = (np.stack([gx, gy, gz], axis=-1).reshape(-1, 3) + centre).astype(np.float32)
-
-    try:
-        inside = scene.compute_occupancy(o3d.core.Tensor(grid), nsamples=nsamples)
-    except TypeError:                       # older Open3D without nsamples
-        inside = scene.compute_occupancy(o3d.core.Tensor(grid))
-    return float(inside.numpy().sum() * step ** 3)
+def compactness_final(mesh):
+    """Returns (compactness or None, status)."""
+    fixed, n_holes = repair_mesh(o3d.geometry.TriangleMesh(mesh))
+    if not is_closed_and_consistent(fixed):
+        return None, "not closed"
+    a = surface_area(fixed)
+    if a <= 0:
+        return None, "zero area"
+    c = 36 * np.pi * mesh_volume(fixed) ** 2 / a ** 3
+    if not (0.0 <= c <= 1.0):
+        return None, "implausible"
+    return float(c), "ok"
 
 
 LIMIT = 200
@@ -222,71 +165,75 @@ for folder in sorted(os.listdir(DATABASE_DIR)):
         if name.lower().endswith(EXTENSIONS):
             items.append((folder, name))
 
-random.seed(0)
-if len(items) > LIMIT:
-    items = random.sample(items, LIMIT)
+def edge_report(mesh):
+    """Per undirected edge: how many triangles use it in each direction."""
+    t = np.asarray(mesh.triangles)
+    fwd = defaultdict(int)
+    for a, b, c in t:
+        for u, w in ((a, b), (b, c), (c, a)):
+            fwd[(u, w)] += 1
+    seen = set()
+    boundary = nonmanifold = samedir = unbalanced = 0
+    for (u, w) in list(fwd):
+        key = (min(u, w), max(u, w))
+        if key in seen:
+            continue
+        seen.add(key)
+        f, r = fwd.get(key, 0), fwd.get((key[1], key[0]), 0)
+        if f != r:
+            unbalanced += 1
+        if f + r == 1:
+            boundary += 1            # still a hole edge
+        elif f + r >= 3:
+            nonmanifold += 1         # 3+ triangles on one edge
+        elif f != 1:
+            samedir += 1             # exactly 2 triangles but both go the same way
+    return dict(boundary=boundary, nonmanifold=nonmanifold,
+                samedir=samedir, unbalanced=unbalanced)
 
-rows = []
-t0 = time.time()
-for i, (folder, name) in enumerate(items, start=1):
+
+def volume_centered(mesh):
+    """Signed-tetrahedra volume with the origin moved to the vertex mean.
+    For a balanced mesh the origin doesn't matter; for an open one it reduces the error."""
+    m = o3d.geometry.TriangleMesh(mesh)
+    m.translate(-np.asarray(m.vertices).mean(axis=0))
+    return mesh_volume(m)
+
+
+os.makedirs("debug_failed", exist_ok=True)
+rows, saved = [], 0
+for folder, name in items:
     base = o3d.io.read_triangle_mesh(os.path.join(DATABASE_DIR, folder, name))
     if not base.has_triangles():
-        rows.append(dict(folder=folder, name=name, status="load failed"))
         continue
-
-    # Occupancy volume on the merely cleaned mesh (no repair, no fans)
-    cleaned = utils.clean_mesh(o3d.geometry.TriangleMesh(base))
-    v_occ = volume_by_occupancy(cleaned)
-    a_clean = surface_area(cleaned)
-
-    # Exact volume on the repaired mesh
     fixed, n_holes = repair_mesh(o3d.geometry.TriangleMesh(base))
     closed = is_closed_and_consistent(fixed)
-    v_exact = mesh_volume(fixed)
-    a_fixed = surface_area(fixed)
-    o, d = (0, 0) if closed else failure_reasons(fixed)
+    rep = edge_report(fixed)
+    a = surface_area(fixed)
+    v = volume_centered(fixed)
+    c = 36 * np.pi * v**2 / a**3 if a > 0 else float("nan")
+    rows.append(dict(folder=folder, name=name, closed=closed,
+                     balanced=(rep["unbalanced"] == 0), c=c,
+                     faces=len(fixed.triangles), **rep))
+    if not closed and saved < 8:
+        out_dir = os.path.join("debug_failed", folder)
+        os.makedirs(out_dir, exist_ok=True)
+        o3d.io.write_triangle_mesh(os.path.join(out_dir, name), fixed)
+        saved += 1
 
-    c_exact = 36 * np.pi * v_exact**2 / a_fixed**3 if a_fixed > 0 else 0.0
-    c_occ = 36 * np.pi * v_occ**2 / a_clean**3 if a_clean > 0 else 0.0
-    rel_diff = abs(v_occ - v_exact) / v_exact if v_exact > 0 else float("nan")
+failed = [r for r in rows if not r["closed"]]
+print(f"closed+consistent: {len(rows) - len(failed)}/{len(rows)}")
+print(f"balanced (looser test): {sum(r['balanced'] for r in rows)}/{len(rows)}")
+print(f"\nOf the {len(failed)} that fail the strict test:")
+print("  balanced anyway:", sum(r["balanced"] for r in failed))
+print("  have boundary edges (holes):", sum(r["boundary"] > 0 for r in failed))
+print("  have non-manifold edges:", sum(r["nonmanifold"] > 0 for r in failed))
+print("  have same-direction pairs:", sum(r["samedir"] > 0 for r in failed))
+print("  compactness in [0,1] when computed anyway:", sum(0 <= r["c"] <= 1 for r in failed))
+print("  compactness > 1:", sum(r["c"] > 1 for r in failed))
 
-    rows.append(dict(folder=folder, name=name, status="ok", closed=closed,
-                     n_holes=n_holes, open_edges=o, dup_dir=d,
-                     v_exact=v_exact, v_occ=v_occ, rel_diff=rel_diff,
-                     c_exact=c_exact, c_occ=c_occ))
-    if i % 20 == 0:
-        print(f"{i}/{len(items)} done ({time.time() - t0:.0f}s)")
-
-# Save everything so you can inspect single meshes in the viewer
-ok_rows = [r for r in rows if r["status"] == "ok"]
-with open("final_test.csv", "w", newline="") as f:
-    w = csv.DictWriter(f, fieldnames=list(ok_rows[0].keys()))
-    w.writeheader()
-    w.writerows(ok_rows)
-
-# ---- Summary ----
-closed_rows = [r for r in ok_rows if r["closed"]]
-trusted = [r for r in closed_rows if r["n_holes"] <= MAX_HOLES]
-agree = [r for r in trusted if r["rel_diff"] <= AGREE_TOL]
-failed = [r for r in ok_rows if not r["closed"]]
-
-print(f"\nMeshes tested: {len(ok_rows)} ({len(rows) - len(ok_rows)} failed to load)")
-print(f"Closed + consistent: {len(closed_rows)}")
-print(f"  ...and <= {MAX_HOLES} holes filled (trusted): {len(trusted)}")
-print(f"  ...and exact vs occupancy within {AGREE_TOL:.0%}: {len(agree)}")
-
-if trusted:
-    diffs = np.array([r["rel_diff"] for r in trusted])
-    print(f"Volume difference (trusted meshes): median {np.median(diffs):.2%}, "
-          f"90th percentile {np.percentile(diffs, 90):.2%}")
-    print(f"Compactness > 1 among trusted: {sum(r['c_exact'] > 1 for r in trusted)} (should be ~0)")
-
-if failed:
-    print(f"\nStill failing: {len(failed)}")
-    print("  open edges only:", sum(r['open_edges'] > 0 and r['dup_dir'] == 0 for r in failed))
-    print("  duplicate direction only:", sum(r['open_edges'] == 0 and r['dup_dir'] > 0 for r in failed))
-    print("  both:", sum(r['open_edges'] > 0 and r['dup_dir'] > 0 for r in failed))
-
-print("\nWorst exact-vs-occupancy disagreements (open these in the viewer):")
-for r in sorted(trusted, key=lambda r: -r["rel_diff"])[:5]:
-    print(f"  {r['folder']}/{r['name']}: diff {r['rel_diff']:.1%}, holes {r['n_holes']}")
+print("\nSamples of failed meshes (also saved to debug_failed/):")
+for r in failed[:8]:
+    print(f"  {r['folder']}/{r['name']}: faces {r['faces']}, boundary {r['boundary']}, "
+          f"nonmanifold {r['nonmanifold']}, samedir {r['samedir']}, "
+          f"balanced {r['balanced']}, c={r['c']:.3f}")
