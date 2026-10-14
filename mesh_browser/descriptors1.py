@@ -58,14 +58,6 @@ def from_meshlab(ms):
     return make_mesh(m.vertex_matrix(), m.face_matrix())
 
 
-def run_filter(ms, new_name, old_name, **kwargs):
-    """PyMeshLab renamed filters between versions: try the new name, then the old one."""
-    fn = getattr(ms, new_name, None) or getattr(ms, old_name, None)
-    if fn is None:
-        raise AttributeError(f"Neither {new_name} nor {old_name} exists in your PyMeshLab version")
-    fn(**kwargs)
-
-
 # ---------------------------------------------------------------------------
 # Measurements
 # ---------------------------------------------------------------------------
@@ -126,21 +118,16 @@ def fix_non_manifold(mesh):
     """Remove non-manifold edges (by removing faces) and split non-manifold vertices.
     Do NOT call clean_mesh afterwards: it would merge the split vertices again."""
     ms = to_meshlab(mesh)
-    run_filter(ms, "meshing_repair_non_manifold_edges",
-               "repair_non_manifold_edges_by_removing_faces",
-               **({"method": "Remove Faces"}
-                  if hasattr(ms, "meshing_repair_non_manifold_edges") else {}))
-    run_filter(ms, "meshing_repair_non_manifold_vertices",
-               "repair_non_manifold_vertices_by_splitting", vertdispratio=0.0)
-    run_filter(ms, "meshing_remove_unreferenced_vertices",
-               "remove_unreferenced_vertices")
+    ms.meshing_repair_non_manifold_edges(method="Remove Faces")
+    ms.meshing_repair_non_manifold_vertices(vertdispratio=0.0)
+    ms.meshing_remove_unreferenced_vertices()
     return from_meshlab(ms)
 
 
 def meshlab_close_holes(mesh, max_hole_size=200):
     """MeshLab's hole closing. max_hole_size = max edges on a hole that still gets closed."""
     ms = to_meshlab(mesh)
-    run_filter(ms, "meshing_close_holes", "close_holes", maxholesize=max_hole_size)
+    ms.meshing_close_holes(maxholesize=max_hole_size)
     return from_meshlab(ms)
 
 
@@ -355,7 +342,7 @@ def list_items(database_dir, limit=None):
     return items if limit is None else items[:limit]
 
 
-def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=None):
+def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=10):
     """Generator yielding (done, total). Writes the descriptor table to output_path."""
     items = list_items(database_dir, limit)
     total = len(items)
