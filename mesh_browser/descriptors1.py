@@ -64,8 +64,7 @@ def from_meshlab(ms):
 
 def surface_area(mesh):
     """Total surface area: the sum of all triangle areas."""
-    p0, p1, p2 = triangle_corners(mesh)
-    return float(0.5 * np.linalg.norm(np.cross(p1 - p0, p2 - p0), axis=1).sum())
+    return float(mesh.get_surface_area())
 
 
 def mesh_volume(mesh, origin=None):
@@ -248,6 +247,14 @@ def repair_mesh(mesh, max_hole_size=200):
 # Descriptors
 # ---------------------------------------------------------------------------
 
+def unit_or_none(x, tol=1e-6):
+    """x if it lies in [0, 1], else None. Values within tol of the range are clipped, so a
+    perfect box (ratio 1.0000000002 from rounding) is not thrown away."""
+    if x is None or not (-tol <= x <= 1.0 + tol):
+        return None
+    return float(min(max(x, 0.0), 1.0))
+
+
 class MeshDescriptors:
     """Descriptors of ONE normalized mesh. Every value is computed on first access and
     cached in self.__dict__, so the slow repair runs at most once per mesh.
@@ -294,8 +301,7 @@ class MeshDescriptors:
     @cached_property
     def compactness(self):
         """36*pi*V^2 / A^3 on the repaired mesh. None if zero area or outside [0, 1]."""
-        c = self._compactness_raw
-        return c if c is not None and 0.0 <= c <= 1.0 else None
+        return unit_or_none(self._compactness_raw)
 
     @cached_property
     def quality(self):
@@ -310,8 +316,26 @@ class MeshDescriptors:
             return "balanced"
         return "open"
 
-    # Later: rectangularity, convexity, diameter, eccentricity go here as further
-    # cached_property entries. Rectangularity and convexity read self.volume.
+    @cached_property
+    def obb_volume(self):
+        """Volume of Open3D's oriented bounding box of the repaired mesh. Approximate:
+        the box is not guaranteed to be the minimum one. None if Open3D cannot build
+        it (for example a completely flat shape)."""
+        try:
+            return float(self.repaired.get_oriented_bounding_box().volume())
+        except RuntimeError:
+            return None
+
+    @cached_property
+    def rectangularity(self):
+        """Shape volume / OBB volume. 1 for a box, lower for shapes that fill their box
+        poorly. None if there is no box or the ratio falls outside [0, 1]."""
+        if not self.obb_volume:
+            return None
+        return unit_or_none(self.volume / self.obb_volume)
+
+    # Later: convexity, diameter, eccentricity go here as further cached_property
+    # entries. Convexity reads self.volume.
 
     def as_dict(self):
         """All descriptors as one row. Add the new descriptors here when they exist."""
@@ -319,6 +343,7 @@ class MeshDescriptors:
             "area": self.area,
             "volume": self.volume,
             "compactness": self.compactness,
+            "rectangularity": self.rectangularity,
             "quality": self.quality,
         }
 
@@ -331,7 +356,7 @@ def compute_descriptors(mesh, max_hole_size=200):
 # Database run (same pattern as analyze_steps / normalize_steps)
 # ---------------------------------------------------------------------------
 
-COLUMNS = ["name", "folder", "area", "volume", "compactness", "quality"]
+COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "quality"]
 
 
 def list_items(database_dir, limit=None):
