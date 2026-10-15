@@ -119,6 +119,20 @@ def max_pairwise_distance(points, chunk=128):
     return float(np.sqrt(best))
 
 
+def covariance_eccentricity(mesh):
+    """Largest / smallest eigenvalue of the covariance matrix of the vertex positions.
+    1 for a ball-like spread, large for elongated or flat shapes. Returns None when the
+    smallest eigenvalue is (almost) zero, i.e. the vertices lie in a plane or on a line."""
+    points = np.asarray(mesh.vertices)
+    if len(points) < 4:
+        return None
+    eigenvalues = np.linalg.eigvalsh(np.cov(points.T))     # symmetric 3x3, ascending order
+    smallest, largest = float(eigenvalues[0]), float(eigenvalues[-1])
+    if largest <= 0 or smallest <= 1e-12 * largest:
+        return None
+    return largest / smallest
+
+
 # ---------------------------------------------------------------------------
 # Repair pipeline
 # ---------------------------------------------------------------------------
@@ -379,7 +393,11 @@ class MeshDescriptors:
             return None
         return unit_or_none(self.volume / self.hull_volume)
 
-    # Later: eccentricity goes here as a further cached_property entry.
+    @cached_property
+    def eccentricity(self):
+        """Eccentricity of the vertex cloud. Needs no repair and no alignment: the
+        eigenvalues do not change when the shape is rotated."""
+        return covariance_eccentricity(self.mesh)
 
     def as_dict(self):
         """All descriptors as one row. Add the new descriptors here when they exist."""
@@ -390,6 +408,7 @@ class MeshDescriptors:
             "rectangularity": self.rectangularity,
             "convexity": self.convexity,
             "diameter": self.diameter,
+            "eccentricity": self.eccentricity,
             "quality": self.quality,
         }
 
@@ -402,7 +421,7 @@ def compute_descriptors(mesh, max_hole_size=200):
 # Database run (same pattern as analyze_steps / normalize_steps)
 # ---------------------------------------------------------------------------
 
-COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "convexity", "diameter", "quality"]
+COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "convexity", "diameter", "eccentricity", "quality"]
 
 
 def list_items(database_dir, limit=None):
