@@ -109,6 +109,16 @@ def edge_report(mesh):
                 samedir=samedir, unbalanced=unbalanced)
 
 
+def max_pairwise_distance(points, chunk=128):
+    """Largest distance between any two of the given points (an n x 3 array)."""
+    points = np.asarray(points)
+    best = 0.0
+    for start in range(0, len(points), chunk):  # chunked, so no huge n x n matrix
+        diff = points[start:start + chunk, None, :] - points[None, :, :]
+        best = max(best, float((diff ** 2).sum(axis=2).max()))
+    return float(np.sqrt(best))
+
+
 # ---------------------------------------------------------------------------
 # Repair pipeline
 # ---------------------------------------------------------------------------
@@ -334,8 +344,42 @@ class MeshDescriptors:
             return None
         return unit_or_none(self.volume / self.obb_volume)
 
-    # Later: convexity, diameter, eccentricity go here as further cached_property
-    # entries. Convexity reads self.volume.
+    @cached_property
+    def hull(self):
+        """Convex hull of the normalized, unrepaired mesh. Shared by diameter and
+        convexity. None if Open3D cannot build it (for example a completely flat shape)."""
+        try:
+            hull, _ = self.mesh.compute_convex_hull()
+            return hull
+        except RuntimeError:
+            return None
+
+    @cached_property
+    def diameter(self):
+        """Largest distance between two points of the shape. The farthest pair always
+        lies on the convex hull, so only hull vertices are compared. Falls back to all
+        vertices when there is no hull."""
+        source = self.hull if self.hull is not None else self.mesh
+        return max_pairwise_distance(np.asarray(source.vertices))
+
+    @cached_property
+    def hull_volume(self):
+        if self.hull is None:
+            return None
+        try:
+            return float(self.hull.get_volume())
+        except RuntimeError:                   # Open3D refuses a hull it deems not watertight
+            return None
+
+    @cached_property
+    def convexity(self):
+        """Shape volume / convex hull volume. 1 for a convex shape, lower for shapes
+        with dents or holes. None if there is no hull or the ratio is outside [0, 1]."""
+        if not self.hull_volume:
+            return None
+        return unit_or_none(self.volume / self.hull_volume)
+
+    # Later: eccentricity goes here as a further cached_property entry.
 
     def as_dict(self):
         """All descriptors as one row. Add the new descriptors here when they exist."""
@@ -344,6 +388,8 @@ class MeshDescriptors:
             "volume": self.volume,
             "compactness": self.compactness,
             "rectangularity": self.rectangularity,
+            "convexity": self.convexity,
+            "diameter": self.diameter,
             "quality": self.quality,
         }
 
@@ -356,7 +402,7 @@ def compute_descriptors(mesh, max_hole_size=200):
 # Database run (same pattern as analyze_steps / normalize_steps)
 # ---------------------------------------------------------------------------
 
-COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "quality"]
+COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "convexity", "diameter", "quality"]
 
 
 def list_items(database_dir, limit=None):
@@ -387,7 +433,9 @@ def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=10):
                 row = compute_descriptors(mesh)
             except Exception as e:           # one bad mesh must not stop the whole run
                 row = {"quality": f"error: {e}"}
-        ws.append([name, folder] + [row.get(c) for c in COLUMNS[2:]])
+        values = [row.get(c) for c in COLUMNS[2:]]
+        # openpyxl writes a Python None as an empty cell, so write the text "None" instead
+        ws.append([name, folder] + ["None" if v is None else v for v in values])
         yield i, total
 
     wb.save(output_path)
