@@ -1,4 +1,4 @@
-# DATABASE_DIR = "ShapeDatabase_INFOMR-master"
+#DATABASE_DIR = "ShapeDatabase_INFOMR-master"
 # DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
 DATABASE_DIR = "normalized_database"
 # DATABASE_DIR = "debug_failed"
