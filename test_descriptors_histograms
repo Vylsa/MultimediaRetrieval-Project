@@ -1,0 +1,127 @@
+"""Compute the A3, D1, D2, D3, D4 histograms of a mesh and plot them.
+
+Set file_path below and run the file:
+    python show_histograms.py
+"""
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from mesh_browser.mesh_utils import load_mesh
+from mesh_browser.descriptors import (DISTRIBUTION_NAMES, DISTRIBUTION_RANGES, N_BINS,
+                                              N_SAMPLES, SAMPLE_SOURCE, distribution_descriptors)
+
+
+from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR
+# --- Settings: edit these ---------------------------------------------------------
+
+# The mesh to plot. A list of paths also works, to compare meshes in one figure:
+# file_path = [r"database/Car/m1337.obj", r"database/Car/m1338.obj"]
+file_path = os.path.join(NORMALIZED_DATABASE_DIR, "Apartment", "D00138.obj")
+
+save_path = None         # e.g. "histograms.png" to also save the figure, None to only show it
+n_bins = N_BINS          # number of bins per histogram
+sample_source = SAMPLE_SOURCE  # "vertices" or "surface"
+
+# ------------------------------------------------------------------------------------
+
+# Fixed color per mesh, in order (never cycled), so mesh 1 is always blue, mesh 2 orange, ...
+MESH_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+               "#e87ba4", "#008300", "#7b5cd6", "#8a8a85"]
+
+TITLES = {
+    "A3": "A3: angle of 3 random points",
+    "D1": "D1: barycenter to random point",
+    "D2": "D2: distance between 2 points",
+    "D3": "D3: √ area of triangle",
+    "D4": "D4: ∛ volume of tetrahedron",
+}
+X_LABELS = {"A3": "angle (rad)", "D1": "distance", "D2": "distance",
+            "D3": "√ area", "D4": "∛ volume"}
+
+
+def style_axes(ax):
+    """Recessive axes: light grid behind the data, no top/right spines."""
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", color="#e4e3dd", linewidth=0.8)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color("#b8b7b0")
+    ax.tick_params(colors="#55554f", labelsize=8)
+
+
+def plot_histograms(meshes, n_bins=N_BINS, source=SAMPLE_SOURCE):
+    """meshes: list of (label, mesh). One panel per descriptor; one mesh is drawn as
+    bars, several meshes as step lines on top of each other so they can be compared."""
+    hists = [(label, distribution_descriptors(mesh, n_bins=n_bins, source=source))
+             for label, mesh in meshes]
+    single = len(hists) == 1
+
+    fig, axes = plt.subplots(1, len(DISTRIBUTION_NAMES), figsize=(4 * len(DISTRIBUTION_NAMES), 3.8),
+                             sharey=True, constrained_layout=True)
+    for ax, name in zip(axes, DISTRIBUTION_NAMES):
+        lo, hi = DISTRIBUTION_RANGES[name]
+        edges = np.linspace(lo, hi, n_bins + 1)
+        width = edges[1] - edges[0]
+
+        for i, (label, h) in enumerate(hists):
+            color = MESH_COLORS[i % len(MESH_COLORS)]
+            if single:
+                ax.bar(edges[:-1], h[name], width=width * 0.9, align="edge",
+                       color=color, label=label)
+            else:
+                # Step line: the outline of the histogram, 2px, one color per mesh
+                ax.stairs(h[name], edges, color=color, linewidth=2, label=label)
+
+        ax.set_title(TITLES[name], fontsize=10, color="#22221f", loc="left")
+        ax.set_xlabel(X_LABELS[name], fontsize=9, color="#55554f")
+        ax.set_xlim(lo, hi)
+        style_axes(ax)
+
+    axes[0].set_ylabel("fraction of samples", fontsize=9, color="#55554f")
+    axes[0].set_ylim(bottom=0)
+
+    if single:
+        fig.suptitle(f"Shape distributions: {hists[0][0]}", fontsize=12, x=0.01, ha="left")
+    else:
+        fig.suptitle("Shape distributions", fontsize=12, x=0.01, ha="left")
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="outside lower center", ncol=min(len(labels), 4),
+                   frameon=False, fontsize=9)
+
+    info = f"{N_SAMPLES:,} samples per descriptor, {n_bins} bins, sampled from {source}"
+    fig.text(0.99, 0.995, info, ha="right", va="top", fontsize=8, color="#7a7a73")
+    return fig
+
+
+def main():
+    paths = [file_path] if isinstance(file_path, str) else list(file_path)
+
+    meshes = []
+    for path in paths:
+        mesh = load_mesh(path) if os.path.isfile(path) else None
+        if mesh is None:
+            print(f"Skipped (not found or no triangles): {path}")
+            continue
+        label = f"{os.path.basename(os.path.dirname(path))}/{os.path.basename(path)}"
+        meshes.append((label, mesh))
+        print(f"Loaded {label}: {len(mesh.vertices)} vertices")
+
+    if not meshes:
+        print("No meshes to show. Check file_path at the top of this file.")
+        return
+    if len(meshes) > len(MESH_COLORS):
+        print(f"Showing the first {len(MESH_COLORS)} meshes; more would be unreadable.")
+        meshes = meshes[:len(MESH_COLORS)]
+
+    fig = plot_histograms(meshes, n_bins=n_bins, source=sample_source)
+    if save_path:
+        fig.savefig(save_path, dpi=150)
+        print(f"Saved to {save_path}")
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()
