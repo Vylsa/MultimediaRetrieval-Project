@@ -17,7 +17,7 @@ SEED = 42            # fixed seed, so the histograms are reproducible
 # "vertices": random mesh vertices, as in the assignment
 # "surface":  random points spread uniformly over the surface (area-weighted),
 #             independent of how the mesh is triangulated
-SAMPLE_SOURCE = "vertices"
+SAMPLE_SOURCE = "surface"
 N_SURFACE_POINTS = 10_000  # only used when SAMPLE_SOURCE == "surface"
 
 # Fixed histogram ranges, the same for every shape (valid for shapes in the unit cube).
