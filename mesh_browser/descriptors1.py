@@ -14,6 +14,7 @@ from openpyxl import Workbook
 
 import mesh_browser.mesh_utils as utils
 
+from mesh_browser.descriptors import histogram_feature_names, histogram_feature_vector
 
 # ---------------------------------------------------------------------------
 # Small shared helpers
@@ -415,9 +416,10 @@ class MeshDescriptors:
         """Eccentricity of the vertex cloud. Needs no repair and no alignment: the
         eigenvalues do not change when the shape is rotated."""
         return covariance_eccentricity(self.mesh)
-
+    """
+    # oude as dict zonder histogram descriptors
     def as_dict(self):
-        """All descriptors as one row. Add the new descriptors here when they exist."""
+        #All descriptors as one row. Add the new descriptors here when they exist.
         return {
             "area": self.area,
             "volume": self.volume,
@@ -428,6 +430,22 @@ class MeshDescriptors:
             "eccentricity": self.eccentricity,
             "quality": self.quality,
         }
+    """
+    def as_dict(self):
+        """All descriptors as one row."""
+        row = {
+            "area": self.area,
+            "volume": self.volume,
+            "compactness": self.compactness,
+            "rectangularity": self.rectangularity,
+            "convexity": self.convexity,
+            "diameter": self.diameter,
+            "eccentricity": self.eccentricity,
+            "quality": self.quality,
+        }
+        # Histograms on the UNrepaired mesh: the repair adds fake fan triangles
+        row.update(zip(histogram_feature_names(), histogram_feature_vector(self.mesh)))
+        return row
 
 
 def compute_descriptors(mesh, max_hole_size=200):
@@ -438,9 +456,25 @@ def compute_descriptors(mesh, max_hole_size=200):
 # Database run (same pattern as analyze_steps / normalize_steps)
 # ---------------------------------------------------------------------------
 
-COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "convexity", "diameter", "eccentricity", "quality"]
+#COLUMNS = ["name", "folder", "area", "volume", "compactness", "rectangularity", "convexity", "diameter", "eccentricity", "quality"]
+
+# new colums with histogram descriptors
+COLUMNS = (["name", "folder", "area", "volume", "compactness", "rectangularity",
+            "convexity", "diameter", "eccentricity", "quality"]
+           + histogram_feature_names())
 
 
+FEATURE_COLUMNS = (["area", "compactness", "rectangularity", "convexity",
+                    "diameter", "eccentricity"] + histogram_feature_names())
+
+
+def feature_vector(row):
+    """The numeric feature vector of one descriptor row (a dict from as_dict()).
+    Missing values (None) become NaN, to be filled in over the whole database."""
+    return np.array([np.nan if row.get(c) is None else float(row[c])
+                     for c in FEATURE_COLUMNS])
+    
+    
 def list_items(database_dir, limit=None):
     """All (folder, mesh name) pairs in the database. Candidate for mesh_utils.py,
     where analyze_steps, resample_steps and normalize_steps could share it."""
