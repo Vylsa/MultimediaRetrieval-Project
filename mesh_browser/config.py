@@ -18,7 +18,7 @@ WINDOW_HEIGHT = 720
 PANEL_WIDTH_EM = 20
  
 # Background colour of the 3D view (R, G, B, A), values between 0 and 1
-BACKGROUND_COLOR = [255, 255, 255, 1]
+BACKGROUND_COLOR = [1, 1, 1, 1]
 
 DISPLAY_SHADED = "Shaded"
 DISPLAY_SHADED_WIREFRAME = "Shaded + wireframe"
