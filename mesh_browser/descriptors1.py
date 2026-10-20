@@ -364,27 +364,24 @@ class MeshDescriptors:
         """Convex hull of the normalized, unrepaired mesh. Shared by diameter and
         convexity. None if Open3D cannot build it (for example a completely flat shape)."""
         try:
-            # 1. Compute the convex hull (Qhull) of the normalized mesh. This may introduce
-            # topological flaws (non-manifold edges, degenerate triangles, etc.) that must
-            # be cleaned up before computing volume or diameter.
             hull, _ = self.mesh.compute_convex_hull()
 
-            # 2.Sequentially clean up common topological flaws introduced by Qhull
-            hull = utils.clean_mesh(hull)  # merge duplicate vertices, remove degenerate triangles
+            # # 2.Sequentially clean up common topological flaws introduced by Qhull
+            # hull = utils.clean_mesh(hull)  # merge duplicate vertices, remove degenerate triangles
 
-            # 3. Ensure consistent triangle orientations (normals pointing outward)
-            hull = orient_consistently(hull)
+            # # 3. Ensure consistent triangle orientations (normals pointing outward)
+            # hull = orient_consistently(hull)
 
-            # 4. Optional: If floating-point gaps still exist, merge vertices within a tiny tolerance
-            # Adjust 'eps' based on your mesh scale (e.g., 1e-5 or 1e-6)
-            hull = meshlab_close_holes(hull, max_hole_size=30)
+            # # 4. Optional: If floating-point gaps still exist, merge vertices within a tiny tolerance
+            # # Adjust 'eps' based on your mesh scale (e.g., 1e-5 or 1e-6)
+            # hull = meshlab_close_holes(hull, max_hole_size=30)
 
-            # 5. Validation check
-            if not hull.is_watertight():
-                print(
-                    "Warning: Mesh passed through cleanup filters but is still not"
-                    " watertight."
-                )
+            # # 5. Validation check
+            # if not hull.is_watertight():
+            #     print(
+            #         "Warning: Mesh passed through cleanup filters but is still not"
+            #         " watertight."
+            #     )
             return hull
         except RuntimeError:
             return None
@@ -402,7 +399,7 @@ class MeshDescriptors:
         if self.hull is None:
             return None
         try:
-            return float(self.hull.get_volume())
+            return float(mesh_volume(self.hull))
         except RuntimeError:                   # Open3D refuses a hull it deems not watertight
             return None
 
@@ -485,7 +482,7 @@ def list_items(database_dir, limit=None):
              for m in utils.list_meshes(os.path.join(database_dir, f))]
     return items if limit is None else items[:limit]
 
-def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=None):
+def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=100):
     """Generator yielding (done, total). Writes the descriptor table to output_path."""
     items = list_items(database_dir, limit)
     total = len(items)
