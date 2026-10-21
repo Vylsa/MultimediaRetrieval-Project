@@ -365,23 +365,6 @@ class MeshDescriptors:
         convexity. None if Open3D cannot build it (for example a completely flat shape)."""
         try:
             hull, _ = self.mesh.compute_convex_hull()
-
-            # # 2.Sequentially clean up common topological flaws introduced by Qhull
-            # hull = utils.clean_mesh(hull)  # merge duplicate vertices, remove degenerate triangles
-
-            # # 3. Ensure consistent triangle orientations (normals pointing outward)
-            # hull = orient_consistently(hull)
-
-            # # 4. Optional: If floating-point gaps still exist, merge vertices within a tiny tolerance
-            # # Adjust 'eps' based on your mesh scale (e.g., 1e-5 or 1e-6)
-            # hull = meshlab_close_holes(hull, max_hole_size=30)
-
-            # # 5. Validation check
-            # if not hull.is_watertight():
-            #     print(
-            #         "Warning: Mesh passed through cleanup filters but is still not"
-            #         " watertight."
-            #     )
             return hull
         except RuntimeError:
             return None
@@ -482,7 +465,7 @@ def list_items(database_dir, limit=None):
              for m in utils.list_meshes(os.path.join(database_dir, f))]
     return items if limit is None else items[:limit]
 
-def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=100):
+def descriptor_steps(database_dir, output_path="descriptors.xlsx", limit=None):
     """Generator yielding (done, total). Writes the descriptor table to output_path."""
     items = list_items(database_dir, limit)
     total = len(items)
