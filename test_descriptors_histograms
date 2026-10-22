@@ -18,7 +18,7 @@ from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR
 
 # The mesh to plot. A list of paths also works, to compare meshes in one figure:
 # file_path = [r"database/Car/m1337.obj", r"database/Car/m1338.obj"]
-file_path = os.path.join(NORMALIZED_DATABASE_DIR, "Apartment", "D00138.obj")
+file_path = os.path.join(NORMALIZED_DATABASE_DIR, "0_normalizing_tests", "sphere.obj")
 
 save_path = None         # e.g. "histograms.png" to also save the figure, None to only show it
 n_bins = N_BINS          # number of bins per histogram

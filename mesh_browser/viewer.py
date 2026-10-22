@@ -32,7 +32,9 @@ class MeshViewer:
         self.widget = gui.SceneWidget()
         self.widget.scene = rendering.Open3DScene(window.renderer)
         self.widget.scene.set_background(config.BACKGROUND_COLOR)
-
+        self.widget.scene.set_lighting(rendering.Open3DScene.LightingProfile.NO_SHADOWS, (0.577, -0.577, -0.577))
+        self.widget.scene.view.set_post_processing(False)
+        
         # Material for the shaded surface
         self.mesh_material = rendering.MaterialRecord()
         self.mesh_material.shader = "defaultLit"
@@ -55,10 +57,11 @@ class MeshViewer:
     def show_mesh(self, mesh):
         """Replace whatever is shown with this mesh and point the camera at it."""
         scene = self.widget.scene
-        scene.clear_geometry()
-
+        scene.clear_geometry()        
+        
         # Add both the surface and the wireframe; the display mode decides which are visible
         scene.add_geometry(MESH_NAME, make_double_sided(mesh), self.mesh_material)
+        #scene.add_geometry(MESH_NAME, mesh, self.mesh_material)
 
         wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
         scene.add_geometry(WIREFRAME_NAME, wireframe, self.line_material)
