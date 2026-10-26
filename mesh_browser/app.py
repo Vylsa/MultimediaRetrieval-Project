@@ -186,9 +186,11 @@
 """The main window: connects the side panel, the 3D view and the database."""
 
 import os
+from os import path
 import threading
 
 import open3d.visualization.gui as gui
+import open3d as o3d
 
 from . import config
 from .database import is_valid_database, list_subfolders, list_meshes
@@ -227,6 +229,7 @@ class MeshBrowserApp:
                 ("descriptors", "Descriptors:", "Compute descriptors -> Excel",
                  lambda: self._start_task("descriptors", "Computing descriptors",
                                           self._work_descriptors)),
+                ("load", "Load mesh:", "Open .obj file...", self._on_open_clicked),
             ],
         )
 
@@ -347,7 +350,32 @@ class MeshBrowserApp:
         self.panel.set_tool_enabled(name, True)
         self.panel.set_tool_info(name, message)
         self.window.post_redraw()
+        
+        # --- Open mesh from file ---
+    def _on_open_clicked(self):
+        dlg = gui.FileDialog(gui.FileDialog.OPEN, "Choose a mesh", self.window.theme)
+        dlg.add_filter(".obj", "Wavefront OBJ (.obj)")
+        dlg.add_filter("", "All files")
+        if self.database_dir and os.path.isdir(self.database_dir):
+            dlg.set_path(self.database_dir)
+        dlg.set_on_cancel(self._on_open_cancel)
+        dlg.set_on_done(self._on_open_done)
+        self.window.show_dialog(dlg)
 
+    def _on_open_cancel(self):
+        self.window.close_dialog()
+
+    def _on_open_done(self, file_path):
+        self.window.close_dialog()
+        name = os.path.basename(file_path)
+        mesh = load_mesh(file_path)
+        if mesh is None:
+            self.panel.set_tool_info("load", f"Could not load {name}")
+            return
+        self.viewer.show_mesh(mesh)
+        n_vertices, n_triangles = mesh_stats(mesh)
+        self.panel.set_info(f"Vertices: {n_vertices}\nTriangles: {n_triangles}")
+        self.panel.set_tool_info("load", f"Loaded {name}")
 
 def run():
     gui.Application.instance.initialize()
