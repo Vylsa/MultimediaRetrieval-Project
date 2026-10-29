@@ -4,8 +4,8 @@
 Run after the descriptors have been computed for the whole database."""
 from mesh_browser.feature_normalization import normalize_database_features
 
-DESCRIPTOR_PATH = "descriptors.xlsx"
-OUTPUT_PATH = "normalized_features.xlsx"
+DESCRIPTOR_PATH = "sheets/descriptors.xlsx"
+OUTPUT_PATH = "sheets/normalized_features.xlsx"
 STATS_PATH = "feature_stats.json"
 
 if __name__ == "__main__":

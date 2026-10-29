@@ -199,8 +199,8 @@ from .mesh_utils import load_mesh, mesh_stats, analyze_database, normalize_datab
 from .side_panel import SidePanel
 from .viewer import MeshViewer
 
-ANALYZE_FILE = "normalized_sheet_resampled.xlsx"
-DESCRIPTORS_FILE = "descriptors.xlsx"
+ANALYZE_FILE = "sheets/normalized_sheet_resampled.xlsx"
+DESCRIPTORS_FILE = "sheets/descriptors.xlsx"
 
 
 class MeshBrowserApp:
