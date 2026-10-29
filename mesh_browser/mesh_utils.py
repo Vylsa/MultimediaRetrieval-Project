@@ -6,9 +6,9 @@ import open3d as o3d
 import threading
 import pymeshlab
 from openpyxl import Workbook
-from .database import list_subfolders, list_meshes
-from .sheet_utils import add_summary_sheet, add_shape_lists
-from . import config
+from database import list_subfolders, list_meshes
+from sheet_utils import add_summary_sheet, add_shape_lists
+import config
 from collections import defaultdict
 
 import heapq

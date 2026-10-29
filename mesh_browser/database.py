@@ -2,7 +2,7 @@
 
 import os
 
-from .config import MESH_EXTENSIONS
+from config import MESH_EXTENSIONS
 
 
 def is_valid_database(path):

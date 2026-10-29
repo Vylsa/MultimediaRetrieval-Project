@@ -12,9 +12,9 @@ import open3d as o3d
 import pymeshlab
 from openpyxl import Workbook
 
-import mesh_browser.mesh_utils as utils
+import mesh_utils as utils
 
-from mesh_browser.descriptors import histogram_feature_names, histogram_feature_vector
+from descriptors import histogram_feature_names, histogram_feature_vector
 
 # ---------------------------------------------------------------------------
 # Small shared helpers
