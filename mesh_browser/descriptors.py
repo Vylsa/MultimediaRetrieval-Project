@@ -8,6 +8,7 @@ the histogram ranges in DISTRIBUTION_RANGES are fixed for that case.
 """
 import numpy as np
 import mesh_utils
+import open3d as o3d
 
 # --- Settings ------------------------------------------------------------------
 
@@ -94,6 +95,7 @@ def normalized_histogram(values, value_range, n_bins=N_BINS):
 def sampling_points(mesh, source=SAMPLE_SOURCE):
     """The points the distributions are computed from (see SAMPLE_SOURCE)."""
     if source == "surface":
+        o3d.utility.random.seed(SEED)  # reproducible sampling
         return np.asarray(mesh.sample_points_uniformly(number_of_points=N_SURFACE_POINTS).points)
     return np.asarray(mesh.vertices)
 
