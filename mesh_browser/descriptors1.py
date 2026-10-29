@@ -305,11 +305,19 @@ class MeshDescriptors:
         """Area of the repaired surface: the one that matches self.volume."""
         return surface_area(self.repaired)
 
+    '''
     @cached_property
     def volume(self):
         return mesh_volume(self.repaired,
                            origin=np.asarray(self.repaired.vertices).mean(axis=0))
-
+    '''
+    @cached_property
+    def volume(self):
+        """Volume of the repaired mesh, raised to at least 0.001 for (nearly) flat shapes."""
+        return max(mesh_volume(self.repaired,
+                               origin=np.asarray(self.repaired.vertices).mean(axis=0)),
+                   0.001)
+    
     # --- descriptors ---------------------------------------------------------
 
     @cached_property
