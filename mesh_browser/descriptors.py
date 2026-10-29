@@ -7,6 +7,8 @@ Expects normalized meshes (barycenter at the origin, inside the unit cube), beca
 the histogram ranges in DISTRIBUTION_RANGES are fixed for that case.
 """
 import numpy as np
+import json
+import os
 
 # --- Settings ------------------------------------------------------------------
 
@@ -30,6 +32,11 @@ DISTRIBUTION_RANGES = {
     "D4": (0.0, np.cbrt(1 / 3)), # largest tetrahedron in the unit cube has volume 1/3
 }
 DISTRIBUTION_NAMES = list(DISTRIBUTION_RANGES)
+
+RANGES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "histogram_ranges.json")
+if os.path.exists(RANGES_PATH):
+    with open(RANGES_PATH) as _f:
+        DISTRIBUTION_RANGES.update({name: tuple(r) for name, r in json.load(_f).items()})
 
 EPS = 1e-12  # guards against division by zero for degenerate samples
 
