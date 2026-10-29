@@ -7,6 +7,7 @@ Expects normalized meshes (barycenter at the origin, inside the unit cube), beca
 the histogram ranges in DISTRIBUTION_RANGES are fixed for that case.
 """
 import numpy as np
+import mesh_utils
 
 # --- Settings ------------------------------------------------------------------
 
@@ -101,7 +102,8 @@ def distribution_values(mesh, n_samples=N_SAMPLES, seed=SEED, source=SAMPLE_SOUR
     """The raw values of the five distributions as a dict {name: 1D array}.
     Handy for plotting or for choosing the histogram ranges."""
     points = sampling_points(mesh, source)
-    barycenter = np.asarray(mesh.vertices).mean(axis=0)
+    # barycenter = np.asarray(mesh.vertices).mean(axis=0)
+    barycenter = mesh_utils.surface_barycenter(mesh)  # more accurate than the mean of the vertices
     rng = np.random.default_rng(seed)
     return {
         "A3": a3_values(points, n_samples, rng),

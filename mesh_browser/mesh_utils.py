@@ -478,7 +478,8 @@ def mesh_volume(mesh):
     if len(triangles) == 0:
         return 0.0
 
-    barycenter = vertices.mean(axis=0)
+    barycenter = surface_barycenter(mesh)  # more accurate than the mean of the vertices
+    # barycenter = vertices.mean(axis=0)
 
     # Triangle corners relative to the barycenter (the shared apex of all tetrahedra)
     a = vertices[triangles[:, 0]] - barycenter
