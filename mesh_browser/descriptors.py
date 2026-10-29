@@ -7,7 +7,7 @@ Expects normalized meshes (barycenter at the origin, inside the unit cube), beca
 the histogram ranges in DISTRIBUTION_RANGES are fixed for that case.
 """
 import numpy as np
-import mesh_utils
+from . import mesh_utils
 import open3d as o3d
 
 # --- Settings ------------------------------------------------------------------
