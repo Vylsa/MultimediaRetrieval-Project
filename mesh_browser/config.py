@@ -1,11 +1,27 @@
-DATABASE_DIR = "ShapeDatabase_INFOMR-master"
+import os
+
+# DATABASE_DIR = "ShapeDatabase_INFOMR-master"
 # DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
 # DATABASE_DIR = "normalized_database"
 # DATABASE_DIR = "debug_failed"
 
-REFINED_DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
+# REFINED_DATABASE_DIR = "ShapeDatabase_INFOMR-master_refined"
 
-NORMALIZED_DATABASE_DIR = "normalized_database"
+# NORMALIZED_DATABASE_DIR = "normalized_database"
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SHEETS_DIR = os.path.join(PROJECT_ROOT, "sheets")
+
+DESCRIPTORS_FILE = os.path.join(SHEETS_DIR, "descriptors.xlsx")
+STATS_FILE = os.path.join(PROJECT_ROOT, "feature_stats.json")
+
+# DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
+# DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
+DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
+
+
+REFINED_DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
+NORMALIZED_DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
 
 MESH_EXTENSIONS = (".obj",)
  
