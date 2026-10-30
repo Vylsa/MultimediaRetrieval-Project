@@ -15,7 +15,7 @@ import os
 # --- Settings ------------------------------------------------------------------
 
 N_SAMPLES = 100_000  # random samples per descriptor
-N_BINS = 10          # B, the number of histogram bins per descriptor
+N_BINS = 50          # B, the number of histogram bins per descriptor
 SEED = 42            # fixed seed, so the histograms are reproducible
 
 # "vertices": random mesh vertices, as in the assignment
