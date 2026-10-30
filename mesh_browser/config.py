@@ -40,7 +40,12 @@ DISPLAY_SHADED = "Shaded"
 DISPLAY_SHADED_WIREFRAME = "Shaded + wireframe"
 DISPLAY_WIREFRAME = "Wireframe"
 DISPLAY_MODES = [DISPLAY_SHADED, DISPLAY_SHADED_WIREFRAME, DISPLAY_WIREFRAME]
- 
+
+# Results strip under the main view
+STRIP_COUNT = 5                                # best matches shown (plus the query)
+STRIP_HEIGHT_FRACTION = 0.25                   # share of the window height
+TILE_BACKGROUND_COLOR = [0.95, 0.95, 0.95, 1]  # light grey, so the tiles are visible
+
 # Wireframe appearance (R, G, B, A) and line thickness in pixels
 WIREFRAME_COLOR = [0, 0, 0, 1]
 WIREFRAME_LINE_WIDTH = 5.0
@@ -49,3 +54,5 @@ WIREFRAME_LINE_WIDTH = 5.0
 MIN_VERTICES = 5000
 MAX_VERTICES = 10000
 TARGET_VERTICES = 7500
+
+SYNC_CAMERAS = True    # rotate all result tiles together
