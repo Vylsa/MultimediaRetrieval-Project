@@ -21,6 +21,9 @@ HISTOGRAM_PREFIXES = ("A3_", "D1_", "D2_", "D3_", "D4_")
 
 EPS = 1e-12  # guards against dividing by a zero standard deviation or range
 
+LOG_FEATURES = {"area", "compactness", "eccentricity"}
+LOG_FLOOR = 1e-6   # compactness can be (clipped to) 0; log(0) would be -inf
+
 
 # --- Reading the descriptor table ----------------------------------------------------
 
@@ -64,9 +67,19 @@ def load_descriptor_table(path="descriptors.xlsx"):
 
 # --- Database statistics ----------------------------------------------------------------
 
+def log_transform(single):
+    """Apply the log to the skewed columns of a vector (6,) or matrix (n, 6).
+    Missing values stay NaN."""
+    out = np.array(single, dtype=float)          # copy
+    for j, name in enumerate(SINGLE_VALUE_FEATURES):
+        if name in LOG_FEATURES:
+            out[..., j] = np.log(np.maximum(out[..., j], LOG_FLOOR))
+    return out
+
 def compute_stats(single):
     """Per single-value feature: mean, std, min, max and median over the database
     (ignoring missing values). Returns a dict {feature: {stat: value}}."""
+    single = log_transform(single)  # skewed features are log-transformed before computing stats
     stats = {}
     for j, name in enumerate(SINGLE_VALUE_FEATURES):
         column = single[:, j]
@@ -96,6 +109,7 @@ def load_stats(path="feature_stats.json"):
 def standardize(single, stats):
     """z = (x - mean) / std per feature. Missing values become 0 (= the database mean),
     so they add nothing to a distance. Works on one vector (6,) or a matrix (n, 6)."""
+    single = log_transform(single)  # skewed features are log-transformed before standardization
     single = np.asarray(single, dtype=float)
     mean = np.array([stats[f]["mean"] for f in SINGLE_VALUE_FEATURES])
     std = np.array([stats[f]["std"] for f in SINGLE_VALUE_FEATURES])
@@ -106,6 +120,7 @@ def standardize(single, stats):
 def min_max(single, stats):
     """(x - min) / (max - min) per feature, so the database spans [0, 1]. A query outside
     the database range can fall outside [0, 1]. Missing values become 0.5."""
+    single = log_transform(single)  # skewed features are log-transformed before min-max normalization
     single = np.asarray(single, dtype=float)
     lo = np.array([stats[f]["min"] for f in SINGLE_VALUE_FEATURES])
     hi = np.array([stats[f]["max"] for f in SINGLE_VALUE_FEATURES])
@@ -153,8 +168,8 @@ def write_normalized_database(names, classes, single, hists, hist_columns, stats
     wb.save(path)
 
 
-def normalize_database_features(descriptor_path="descriptors.xlsx",
-                                output_path="normalized_features.xlsx",
+def normalize_database_features(descriptor_path="sheets/descriptors.xlsx",
+                                output_path="sheets/normalized_features.xlsx",
                                 stats_path="feature_stats.json"):
     """Full step: read the descriptors, compute and save the statistics, write the
     normalized database. Returns (names, classes, zscore_matrix) for direct use."""

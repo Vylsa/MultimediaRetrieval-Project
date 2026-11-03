@@ -28,10 +28,11 @@ def make_axes(length):
 
 
 class MeshViewer:
-    def __init__(self, window):
+    def __init__(self, window, compact=False, background=None):
+        self.compact = compact
         self.widget = gui.SceneWidget()
         self.widget.scene = rendering.Open3DScene(window.renderer)
-        self.widget.scene.set_background(config.BACKGROUND_COLOR)
+        self.widget.scene.set_background(background or config.BACKGROUND_COLOR)
         self.widget.scene.set_lighting(rendering.Open3DScene.LightingProfile.NO_SHADOWS, (0.577, -0.577, -0.577))
         self.widget.scene.view.set_post_processing(False)
         
@@ -61,13 +62,14 @@ class MeshViewer:
         
         # Add both the surface and the wireframe; the display mode decides which are visible
         scene.add_geometry(MESH_NAME, make_double_sided(mesh), self.mesh_material)
+        bounds = mesh.get_axis_aligned_bounding_box()
         #scene.add_geometry(MESH_NAME, mesh, self.mesh_material)
 
-        wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
-        scene.add_geometry(WIREFRAME_NAME, wireframe, self.line_material)
+        if not self.compact:
+            wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
+            scene.add_geometry(WIREFRAME_NAME, wireframe, self.line_material)
+            self._add_axes(bounds)
 
-        bounds = mesh.get_axis_aligned_bounding_box()
-        self._add_axes(bounds)
         self._apply_display_mode()
 
         # Frame the mesh and the origin, so the axes stay in view for unnormalized meshes too
@@ -98,6 +100,8 @@ class MeshViewer:
         self._apply_display_mode()
 
     def _apply_display_mode(self):
+        if self.compact:
+            return  # tiles are shaded
         scene = self.widget.scene
         if not scene.has_geometry(MESH_NAME):
             return  # nothing loaded yet
@@ -105,3 +109,7 @@ class MeshViewer:
         scene.show_geometry(MESH_NAME, self.display_mode != config.DISPLAY_WIREFRAME)
         scene.show_geometry(WIREFRAME_NAME, self.display_mode != config.DISPLAY_SHADED)
         self.widget.force_redraw()
+
+    def clear(self):
+        self.widget.scene.clear_geometry()
+        self.widget.force_redraw()    

@@ -4,9 +4,14 @@ Set file_path below and run the file:
     python show_histograms.py
 """
 import os
+from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(root_dir))
+
 
 from mesh_browser.mesh_utils import load_mesh
 from mesh_browser.descriptors import (DISTRIBUTION_NAMES, DISTRIBUTION_RANGES, N_BINS,
@@ -18,7 +23,9 @@ from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR
 
 # The mesh to plot. A list of paths also works, to compare meshes in one figure:
 # file_path = [r"database/Car/m1337.obj", r"database/Car/m1338.obj"]
-file_path = os.path.join(NORMALIZED_DATABASE_DIR, "0_normalizing_tests", "sphere.obj")
+file_path = [os.path.join(NORMALIZED_DATABASE_DIR, "Sword", "D00066.obj"),
+             os.path.join(NORMALIZED_DATABASE_DIR, "Sword", "D00071.obj"),
+             os.path.join(NORMALIZED_DATABASE_DIR, "Chess", "m1593.obj"),]
 
 save_path = None         # e.g. "histograms.png" to also save the figure, None to only show it
 n_bins = N_BINS          # number of bins per histogram

@@ -1,10 +1,14 @@
 """Test the descriptors and feature vector on a single mesh.
 Set file_path below and run:  python test_descriptors.py
 """
+import sys
 import time
-
+from pathlib import Path
 import numpy as np
 
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(root_dir))
+    
 from mesh_browser.mesh_utils import load_mesh
 from mesh_browser.descriptors1 import MeshDescriptors, FEATURE_COLUMNS, feature_vector
 from mesh_browser.descriptors import DISTRIBUTION_NAMES, N_BINS

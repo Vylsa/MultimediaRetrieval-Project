@@ -198,15 +198,21 @@ from .descriptors1 import descriptor_steps
 from .mesh_utils import load_mesh, mesh_stats, analyze_database, normalize_database
 from .side_panel import SidePanel
 from .viewer import MeshViewer
+from .search import SearchIndex
+from .strip import ResultsStrip
 
-ANALYZE_FILE = "sheets/normalized_sheet_resampled.xlsx"
-DESCRIPTORS_FILE = "sheets/descriptors.xlsx"
+# ANALYZE_FILE = "sheets/normalized_sheet_resampled.xlsx"
+# DESCRIPTORS_FILE = "./sheets/descriptors.xlsx"
+# STATS_FILE = "feature_stats.json"
+K_RESULTS = 10
 
 
 class MeshBrowserApp:
     def __init__(self, database_dir):
         self.database_dir = database_dir
         self.current_folder = None
+        self._index = None          # SearchIndex, built on the first search
+        self.last_matches = []      # result of the last search (used by the display step)
         self._running = set()       # names of the tools that are busy right now
 
         self.window = gui.Application.instance.create_window(
@@ -229,21 +235,34 @@ class MeshBrowserApp:
                 ("descriptors", "Descriptors:", "Compute descriptors -> Excel",
                  lambda: self._start_task("descriptors", "Computing descriptors",
                                           self._work_descriptors)),
-                ("load", "Load mesh:", "Open .obj file...", self._on_open_clicked),
+                ("find", "Find similar shapes:", "Choose .obj and search...", self._on_find_clicked),
             ],
         )
 
         self.window.add_child(self.viewer.widget)
         self.window.add_child(self.panel.widget)
+
+        self.strip = ResultsStrip(self.window)
+        self.window.set_on_tick_event(self._on_tick)
+        self.last_query_mesh = None
+
         self.window.set_on_layout(self._on_layout)
 
         self._open_database(database_dir)
 
+    def _on_tick(self):
+        return self.strip.sync_cameras()
+
     def _on_layout(self, layout_context):
         """3D view on the left, side panel on the right."""
         r = self.window.content_rect
+        em = self.window.theme.font_size
         panel_width = config.PANEL_WIDTH_EM * self.window.theme.font_size
-        self.viewer.widget.frame = gui.Rect(r.x, r.y, r.width - panel_width, r.height)
+        left_width = r.width - panel_width
+        strip_height = int(r.height * config.STRIP_HEIGHT_FRACTION)
+        
+        self.viewer.widget.frame = gui.Rect(r.x, r.y, left_width, r.height - strip_height)
+        self.strip.layout(r.x, r.y + r.height - strip_height, left_width, strip_height, em)
         self.panel.widget.frame = gui.Rect(r.get_right() - panel_width, r.y, panel_width, r.height)
 
     # --- Database ---
@@ -304,9 +323,9 @@ class MeshBrowserApp:
     def _work_descriptors(self, on_progress):
         """Descriptors are computed on the NORMALIZED database."""
         total = 0
-        for done, total in descriptor_steps(config.NORMALIZED_DATABASE_DIR, DESCRIPTORS_FILE):
+        for done, total in descriptor_steps(config.NORMALIZED_DATABASE_DIR, config.DESCRIPTORS_FILE):
             on_progress(done, total)
-        return f"Wrote {total} meshes to {DESCRIPTORS_FILE}"
+        return f"Wrote {total} meshes to {config.DESCRIPTORS_FILE}"
 
     def _start_task(self, name, label, work):
         """Called on the main thread when a tool button is clicked."""
@@ -350,32 +369,89 @@ class MeshBrowserApp:
         self.panel.set_tool_enabled(name, True)
         self.panel.set_tool_info(name, message)
         self.window.post_redraw()
+        if name == "find" and self.last_matches:
+            self._show_results()
         
-        # --- Open mesh from file ---
-    def _on_open_clicked(self):
-        dlg = gui.FileDialog(gui.FileDialog.OPEN, "Choose a mesh", self.window.theme)
+    #     # --- Open mesh from file ---
+    # def _on_open_clicked(self):
+    #     dlg = gui.FileDialog(gui.FileDialog.OPEN, "Choose a mesh", self.window.theme)
+    #     dlg.add_filter(".obj", "Wavefront OBJ (.obj)")
+    #     dlg.add_filter("", "All files")
+    #     if self.database_dir and os.path.isdir(self.database_dir):
+    #         dlg.set_path(self.database_dir)
+    #     dlg.set_on_cancel(self._on_open_cancel)
+    #     dlg.set_on_done(self._on_open_done)
+    #     self.window.show_dialog(dlg)
+
+    # def _on_open_cancel(self):
+    #     self.window.close_dialog()
+
+    # def _on_open_done(self, file_path):
+    #     self.window.close_dialog()
+    #     name = os.path.basename(file_path)
+    #     mesh = load_mesh(file_path)
+    #     if mesh is None:
+    #         self.panel.set_tool_info("load", f"Could not load {name}")
+    #         return
+    #     self.viewer.show_mesh(mesh)
+    #     n_vertices, n_triangles = mesh_stats(mesh)
+    #     self.panel.set_info(f"Vertices: {n_vertices}\nTriangles: {n_triangles}")
+    #     self.panel.set_tool_info("load", f"Loaded {name}")
+
+        # --- Find: choose a file, show it, search the database with it ---
+    def _on_find_clicked(self):
+        # print(os.getcwd())
+        if "find" in self._running:
+            return
+        dlg = gui.FileDialog(gui.FileDialog.OPEN, "Choose a query mesh", self.window.theme)
         dlg.add_filter(".obj", "Wavefront OBJ (.obj)")
         dlg.add_filter("", "All files")
         if self.database_dir and os.path.isdir(self.database_dir):
             dlg.set_path(self.database_dir)
-        dlg.set_on_cancel(self._on_open_cancel)
-        dlg.set_on_done(self._on_open_done)
+        dlg.set_on_cancel(self.window.close_dialog)
+        dlg.set_on_done(self._on_find_file_chosen)
         self.window.show_dialog(dlg)
 
-    def _on_open_cancel(self):
-        self.window.close_dialog()
-
-    def _on_open_done(self, file_path):
+    def _on_find_file_chosen(self, file_path):
+        """Main thread: show the query mesh at once, then search in the background."""
+        # print(os.getcwd())
         self.window.close_dialog()
         name = os.path.basename(file_path)
         mesh = load_mesh(file_path)
         if mesh is None:
-            self.panel.set_tool_info("load", f"Could not load {name}")
+            self.panel.set_tool_info("find", f"Could not load {name}")
             return
         self.viewer.show_mesh(mesh)
         n_vertices, n_triangles = mesh_stats(mesh)
-        self.panel.set_info(f"Vertices: {n_vertices}\nTriangles: {n_triangles}")
-        self.panel.set_tool_info("load", f"Loaded {name}")
+        self.panel.set_info(f"Query: {name}\nVertices: {n_vertices}\nTriangles: {n_triangles}")
+
+        self.last_matches = []      # forget the previous search
+        self.strip.clear()          # empty the tiles while the new search runs
+        self._start_task("find", "Searching",
+                         lambda on_progress: self._work_find(mesh, K_RESULTS))
+
+    def _work_find(self, mesh, k):
+        """Background thread: no widget access here."""
+        if self._index is None:
+            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
+        matches, row, normalized = self._index.search(mesh, k=k)
+        self.last_query_mesh = normalized
+        self.last_matches = matches
+        lines = [f"Top {len(matches)} matches:"]
+        for rank, m in enumerate(matches, start=1):
+            lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
+        return "\n".join(lines)    
+
+    def _show_results(self):
+        """Main thread: fill the results strip from the last search."""
+        results = []
+        for rank, m in enumerate(self.last_matches[:config.STRIP_COUNT], start=1):
+            result_mesh = load_mesh(os.path.join(config.NORMALIZED_DATABASE_DIR,
+                                                 m["class"], m["name"]))
+            caption = (f"#{rank}  {m['distance']:.3f}\n{m['class']}\n"
+                       f"{os.path.splitext(m['name'])[0]}")
+            results.append((result_mesh, caption))
+        self.strip.show(self.last_query_mesh, results)
 
 def run():
     gui.Application.instance.initialize()
