@@ -433,7 +433,9 @@ class MeshBrowserApp:
     def _work_find(self, mesh, k):
         """Background thread: no widget access here."""
         if self._index is None:
-            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
+            # self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
+            self._index = SearchIndex(config.STANDARDIZED_FILE, config.STANDARDIZED_SHEET,
+                          config.STATS_FILE, config.TEST_CLASSES)
         matches, row, normalized = self._index.search(mesh, k=k)
         self.last_query_mesh = normalized
         self.last_matches = matches
