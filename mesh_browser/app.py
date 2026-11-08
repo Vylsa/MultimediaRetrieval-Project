@@ -196,6 +196,7 @@ from . import config
 from .database import is_valid_database, list_subfolders, list_meshes
 from .descriptors1 import descriptor_steps
 from .mesh_utils import load_mesh, mesh_stats, analyze_database, normalize_database
+from .dr_gui import open_tsne_map
 from .side_panel import SidePanel
 from .viewer import MeshViewer
 from .search import SearchIndex
@@ -236,6 +237,7 @@ class MeshBrowserApp:
                  lambda: self._start_task("descriptors", "Computing descriptors",
                                           self._work_descriptors)),
                 ("find", "Find similar shapes:", "Choose .obj and search...", self._on_find_clicked),
+                ("tsne", "t-SNE map:", "Show t-SNE map", self._on_tsne_clicked),
             ],
         )
 
@@ -443,6 +445,12 @@ class MeshBrowserApp:
         for rank, m in enumerate(matches, start=1):
             lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
         return "\n".join(lines)    
+
+    # --- t-SNE map: open the saved scatterplot in the browser ---
+    def _on_tsne_clicked(self):
+        """Main thread. open_tsne_map() returns immediately, so no background task."""
+        self.panel.set_tool_info("tsne", open_tsne_map())
+        self.window.post_redraw()
 
     def _show_results(self):
         """Main thread: fill the results strip from the last search."""
