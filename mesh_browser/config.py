@@ -56,3 +56,9 @@ MAX_VERTICES = 10000
 TARGET_VERTICES = 7500
 
 SYNC_CAMERAS = True    # rotate all result tiles together
+
+STANDARDIZED_FILE = os.path.join(SHEETS_DIR, "normalized_features.xlsx")
+STANDARDIZED_SHEET = "zscore"  # the sheet inside the workbook with the z-scores
+
+# Classes that are not real shape classes; removed BEFORE t-SNE.
+TEST_CLASSES = ["0_normalizing_tests", "0_resampling_tests"]
