@@ -207,8 +207,8 @@ from .feature_normalization import normalize_feature_vector
 # ANALYZE_FILE = "sheets/normalized_sheet_resampled.xlsx"
 # DESCRIPTORS_FILE = "./sheets/descriptors.xlsx"
 # STATS_FILE = "feature_stats.json"
-K_RESULTS = 10
-R_DEFAULT = 1.5     # default radius for range search 
+K_RESULTS = config.DEFAULT_K
+R_DEFAULT = config.DEFAULT_RANGE    # default radius for range search 
 
 
 class MeshBrowserApp:
@@ -444,10 +444,11 @@ class MeshBrowserApp:
                              lambda on_progress: self._work_find_knn(mesh, name, mode, k, r))
         else:
             self._start_task("find", "Searching",
-                             lambda on_progress: self._work_find(mesh, K_RESULTS))
+                             lambda on_progress: self._work_find(mesh, name, K_RESULTS))
 
+    """
     def _work_find(self, mesh, k):
-        """Background thread: no widget access here."""
+        #Background thread: no widget access here.
         if self._index is None:
             self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
         matches, row, normalized = self._index.search(mesh, k=k)
@@ -456,7 +457,21 @@ class MeshBrowserApp:
         lines = [f"Top {len(matches)} matches:"]
         for rank, m in enumerate(matches, start=1):
             lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
-        return "\n".join(lines)    
+        return "\n".join(lines)   
+    """
+    def _work_find(self, mesh, query_name, k):
+        """Background thread: no widget access here."""
+        if self._index is None:
+            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
+        # Ask for one extra result: if the query shape is in the database, it is its own #1
+        matches, row, normalized = self._index.search(mesh, k=k + 1)
+        matches = [m for m in matches if m["name"] != query_name][:k]
+        self.last_query_mesh = normalized
+        self.last_matches = matches
+        lines = [f"Top {len(matches)} matches:"]
+        for rank, m in enumerate(matches, start=1):
+            lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
+        return "\n".join(lines) 
     
     def _build_kd_index(self):
         """Store the normal search's normalized database vectors in a k-d tree.
@@ -466,7 +481,7 @@ class MeshBrowserApp:
         n_bins = (idx.features.shape[1] - len(SINGLE_VALUE_FEATURES)) // len(HISTOGRAM_NAMES)
         feature_names = SINGLE_VALUE_FEATURES + [f"{h}_{i}" for h in HISTOGRAM_NAMES
                                                  for i in range(n_bins)]
-        return ShapeIndex(idx.names, idx.classes, idx.features, feature_names, weighted=True)
+        return ShapeIndex(idx.names, idx.classes, idx.features, feature_names, weighted=config.WEIGHTED)
 
     def _work_find_knn(self, mesh, query_name, mode, k, r):
         """Background thread: the query's features are computed as in the normal search,

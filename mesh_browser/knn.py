@@ -23,6 +23,9 @@ import numpy as np
 from openpyxl import load_workbook
 from sklearn.neighbors import KDTree
 
+from .config import WEIGHTED
+
+
 
 FEATURES_PATH = os.path.join("sheets", "normalized_features.xlsx")
 # ------------------------------------------------------------------------------------------
@@ -91,7 +94,7 @@ def load_feature_database(path=None, sheet="zscore"):
 class ShapeIndex:
     """The feature database in a k-d tree, for fast K-nearest and range queries."""
 
-    def __init__(self, names, classes, features, feature_names=None, weighted=False,
+    def __init__(self, names, classes, features, feature_names=None, weighted=WEIGHTED,
                  leaf_size=30):
         self.names = list(names)
         self.classes = list(classes)
@@ -108,7 +111,7 @@ class ShapeIndex:
         self._row = {name: i for i, name in enumerate(self.names)}
 
     @classmethod
-    def from_file(cls, path=None, weighted=False):
+    def from_file(cls, path=None, weighted=WEIGHTED):
         """Build the index from the feature file (FEATURES_PATH unless another path is given)."""
         names, classes, features, feature_names = load_feature_database(path)
         return cls(names, classes, features, feature_names, weighted)
