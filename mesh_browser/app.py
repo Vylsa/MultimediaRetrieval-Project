@@ -245,7 +245,6 @@ class MeshBrowserApp:
                  lambda: self._on_find_clicked(use_kd_tree=False)),
                 ("find_knn", "Find similar shapes (k-d tree):", "Choose .obj and search...",
                  lambda: self._on_find_clicked(use_kd_tree=True)),
-                ("find", "Find similar shapes:", "Choose .obj and search...", self._on_find_clicked),
                 ("tsne", "t-SNE map:", "Show t-SNE map", self._on_tsne_clicked),
             ],
             knn_settings=(K_RESULTS, R_DEFAULT),
@@ -466,8 +465,7 @@ class MeshBrowserApp:
     """
     def _work_find(self, mesh, query_name, k):
         """Background thread: no widget access here."""
-        if self._index is None:
-            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
+        matches, row, normalized = self._get_index().search(mesh, k=k + 1)
         # Ask for one extra result: if the query shape is in the database, it is its own #1
         matches, row, normalized = self._index.search(mesh, k=k + 1)
         matches = [m for m in matches if m["name"] != query_name][:k]
@@ -477,6 +475,13 @@ class MeshBrowserApp:
         for rank, m in enumerate(matches, start=1):
             lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
         return "\n".join(lines) 
+    
+    def _get_index(self):
+        """Loaded once, shared by the normal search and the k-d tree search."""
+        if self._index is None:
+            self._index = SearchIndex(config.STANDARDIZED_FILE, config.STANDARDIZED_SHEET,
+                                      config.STATS_FILE, config.TEST_CLASSES)
+        return self._index
     
     def _build_kd_index(self):
         """Store the normal search's normalized database vectors in a k-d tree.
@@ -492,8 +497,7 @@ class MeshBrowserApp:
         """Background thread: the query's features are computed as in the normal search,
         then the k-d tree returns either the k nearest shapes (mode "knn") or all shapes
         within distance r (mode "range")."""
-        if self._index is None:
-            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)
+        self._get_index()
         if self._kd_index is None:
             self._kd_index = self._build_kd_index()          # built once, reused afterwards
 
