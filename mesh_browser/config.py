@@ -62,3 +62,8 @@ DEFAULT_K = 6
 DEFAULT_RANGE = 1.5
 
 WEIGHTED = True               # True: every feature counts equally; False: plain L2
+STANDARDIZED_FILE = os.path.join(SHEETS_DIR, "normalized_features.xlsx")
+STANDARDIZED_SHEET = "zscore"  # the sheet inside the workbook with the z-scores
+
+# Classes that are not real shape classes; removed BEFORE t-SNE.
+TEST_CLASSES = ["0_normalizing_tests", "0_resampling_tests"]
