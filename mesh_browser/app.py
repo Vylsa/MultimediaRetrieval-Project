@@ -201,11 +201,15 @@ from .side_panel import SidePanel
 from .viewer import MeshViewer
 from .search import SearchIndex
 from .strip import ResultsStrip
+from .knn import ShapeIndex, SINGLE_VALUE_FEATURES, HISTOGRAM_NAMES
+from .query import extract_query_features, N_SINGLE
+from .feature_normalization import normalize_feature_vector
 
 # ANALYZE_FILE = "sheets/normalized_sheet_resampled.xlsx"
 # DESCRIPTORS_FILE = "./sheets/descriptors.xlsx"
 # STATS_FILE = "feature_stats.json"
-K_RESULTS = 10
+K_RESULTS = config.DEFAULT_K
+R_DEFAULT = config.DEFAULT_RANGE    # default radius for range search 
 
 
 class MeshBrowserApp:
@@ -213,6 +217,7 @@ class MeshBrowserApp:
         self.database_dir = database_dir
         self.current_folder = None
         self._index = None          # SearchIndex, built on the first search
+        self._kd_index = None       # ShapeIndex (k-d tree), built on the first k-d tree search
         self.last_matches = []      # result of the last search (used by the display step)
         self._running = set()       # names of the tools that are busy right now
 
@@ -236,9 +241,15 @@ class MeshBrowserApp:
                 ("descriptors", "Descriptors:", "Compute descriptors -> Excel",
                  lambda: self._start_task("descriptors", "Computing descriptors",
                                           self._work_descriptors)),
+                ("find", "Find similar shapes:", "Choose .obj and search...",
+                 lambda: self._on_find_clicked(use_kd_tree=False)),
+                ("find_knn", "Find similar shapes (k-d tree):", "Choose .obj and search...",
+                 lambda: self._on_find_clicked(use_kd_tree=True)),
                 ("find", "Find similar shapes:", "Choose .obj and search...", self._on_find_clicked),
                 ("tsne", "t-SNE map:", "Show t-SNE map", self._on_tsne_clicked),
             ],
+            knn_settings=(K_RESULTS, R_DEFAULT),
+
         )
 
         self.window.add_child(self.viewer.widget)
@@ -371,7 +382,7 @@ class MeshBrowserApp:
         self.panel.set_tool_enabled(name, True)
         self.panel.set_tool_info(name, message)
         self.window.post_redraw()
-        if name == "find" and self.last_matches:
+        if name in ("find", "find_knn") and self.last_matches:
             self._show_results()
         
     #     # --- Open mesh from file ---
@@ -401,9 +412,9 @@ class MeshBrowserApp:
     #     self.panel.set_tool_info("load", f"Loaded {name}")
 
         # --- Find: choose a file, show it, search the database with it ---
-    def _on_find_clicked(self):
-        # print(os.getcwd())
-        if "find" in self._running:
+    def _on_find_clicked(self, use_kd_tree=False):
+        task = "find_knn" if use_kd_tree else "find"
+        if task in self._running:
             return
         dlg = gui.FileDialog(gui.FileDialog.OPEN, "Choose a query mesh", self.window.theme)
         dlg.add_filter(".obj", "Wavefront OBJ (.obj)")
@@ -411,17 +422,17 @@ class MeshBrowserApp:
         if self.database_dir and os.path.isdir(self.database_dir):
             dlg.set_path(self.database_dir)
         dlg.set_on_cancel(self.window.close_dialog)
-        dlg.set_on_done(self._on_find_file_chosen)
+        dlg.set_on_done(lambda path: self._on_find_file_chosen(path, use_kd_tree))
         self.window.show_dialog(dlg)
 
-    def _on_find_file_chosen(self, file_path):
+    def _on_find_file_chosen(self, file_path, use_kd_tree=False):
         """Main thread: show the query mesh at once, then search in the background."""
-        # print(os.getcwd())
+        task = "find_knn" if use_kd_tree else "find"
         self.window.close_dialog()
         name = os.path.basename(file_path)
         mesh = load_mesh(file_path)
         if mesh is None:
-            self.panel.set_tool_info("find", f"Could not load {name}")
+            self.panel.set_tool_info(task, f"Could not load {name}")
             return
         self.viewer.show_mesh(mesh)
         n_vertices, n_triangles = mesh_stats(mesh)
@@ -429,11 +440,18 @@ class MeshBrowserApp:
 
         self.last_matches = []      # forget the previous search
         self.strip.clear()          # empty the tiles while the new search runs
-        self._start_task("find", "Searching",
-                         lambda on_progress: self._work_find(mesh, K_RESULTS))
+        if use_kd_tree:
+            # Read the settings here, on the main thread (widgets can't be read from the worker)
+            mode, k, r = self.panel.get_knn_settings()
+            self._start_task("find_knn", "Searching (k-d tree)",
+                             lambda on_progress: self._work_find_knn(mesh, name, mode, k, r))
+        else:
+            self._start_task("find", "Searching",
+                             lambda on_progress: self._work_find(mesh, name, K_RESULTS))
 
+    """
     def _work_find(self, mesh, k):
-        """Background thread: no widget access here."""
+        #Background thread: no widget access here.
         if self._index is None:
             # self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
             self._index = SearchIndex(config.STANDARDIZED_FILE, config.STANDARDIZED_SHEET,
@@ -444,7 +462,66 @@ class MeshBrowserApp:
         lines = [f"Top {len(matches)} matches:"]
         for rank, m in enumerate(matches, start=1):
             lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
-        return "\n".join(lines)    
+        return "\n".join(lines)   
+    """
+    def _work_find(self, mesh, query_name, k):
+        """Background thread: no widget access here."""
+        if self._index is None:
+            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)   # loaded once
+        # Ask for one extra result: if the query shape is in the database, it is its own #1
+        matches, row, normalized = self._index.search(mesh, k=k + 1)
+        matches = [m for m in matches if m["name"] != query_name][:k]
+        self.last_query_mesh = normalized
+        self.last_matches = matches
+        lines = [f"Top {len(matches)} matches:"]
+        for rank, m in enumerate(matches, start=1):
+            lines.append(f"{rank}. {m['class']}/{m['name']}  {m['distance']:.3f}")
+        return "\n".join(lines) 
+    
+    def _build_kd_index(self):
+        """Store the normal search's normalized database vectors in a k-d tree.
+        The column names are rebuilt from the vector length (6 single values followed by
+        5 histograms of equal length), so search.py does not need to change."""
+        idx = self._index
+        n_bins = (idx.features.shape[1] - len(SINGLE_VALUE_FEATURES)) // len(HISTOGRAM_NAMES)
+        feature_names = SINGLE_VALUE_FEATURES + [f"{h}_{i}" for h in HISTOGRAM_NAMES
+                                                 for i in range(n_bins)]
+        return ShapeIndex(idx.names, idx.classes, idx.features, feature_names, weighted=config.WEIGHTED)
+
+    def _work_find_knn(self, mesh, query_name, mode, k, r):
+        """Background thread: the query's features are computed as in the normal search,
+        then the k-d tree returns either the k nearest shapes (mode "knn") or all shapes
+        within distance r (mode "range")."""
+        if self._index is None:
+            self._index = SearchIndex(config.DESCRIPTORS_FILE, config.STATS_FILE)
+        if self._kd_index is None:
+            self._kd_index = self._build_kd_index()          # built once, reused afterwards
+
+        # Query features: same pipeline and normalization as the normal search
+        features, row, normalized = extract_query_features(mesh)
+        query = normalize_feature_vector(features[:N_SINGLE], features[N_SINGLE:],
+                                         self._index.stats)
+        query = self._kd_index.prepare_query(query)          # same weighting as the tree
+
+        # Leave the query out if it is itself in the database (it would be its own #1)
+        exclude = query_name if query_name in self._kd_index.names else None
+        if mode == "range":
+            results = self._kd_index.range_search(query, r, exclude=exclude)
+            header = f"{len(results)} shapes within R = {r:g} (k-d tree)"
+            if len(results) > config.STRIP_COUNT:
+                header += f", closest {config.STRIP_COUNT} shown below"
+        else:
+            results = self._kd_index.knn(query, k, exclude=exclude)
+            header = f"Top {len(results)} matches, K = {k} (k-d tree)"
+
+        self.last_query_mesh = normalized
+        self.last_matches = [{"name": n, "class": c, "distance": d} for n, c, d in results]
+        if not results:
+            return header + "\nNo shapes found. Try a larger R."
+        lines = [header + ":"]
+        for rank, (n, c, d) in enumerate(results, start=1):
+            lines.append(f"{rank}. {c}/{n}  {d:.3f}")
+        return "\n".join(lines)
 
     # --- t-SNE map: open the saved scatterplot in the browser ---
     def _on_tsne_clicked(self):

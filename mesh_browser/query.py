@@ -16,6 +16,10 @@ from .descriptors import DISTRIBUTION_NAMES, N_BINS
 
 N_SINGLE = 6  # number of single-value features at the start of the vector
 
+# Distance function used for the histograms
+HIST_DISTANCE = "emd" 
+
+
 # Slice of the feature vector that belongs to each group
 GROUPS = {"scalars": slice(0, N_SINGLE)}
 for _i, _name in enumerate(DISTRIBUTION_NAMES):
@@ -88,7 +92,7 @@ HISTOGRAM_DISTANCES = {"emd": emd, "l1": l1, "euclidean": euclidean}
 
 # --- Group distances ------------------------------------------------------------------------
 
-def group_distances(query, database, hist_distance="emd"):
+def group_distances(query, database, hist_distance=HISTOGRAM_DISTANCES):
     """Distance per group. query: (56,), database: (n, 56) (or a second (56,) vector).
     Returns {group: array of n distances}."""
     hist_fn = HISTOGRAM_DISTANCES[hist_distance]
@@ -99,7 +103,7 @@ def group_distances(query, database, hist_distance="emd"):
     return result
 
 
-def compute_group_scales(database, hist_distance="emd", n_pairs=5000, seed=0):
+def compute_group_scales(database, hist_distance=HISTOGRAM_DISTANCES, n_pairs=5000, seed=0):
     """Typical distance per group: the mean over random pairs of database shapes.
     Dividing by it makes the groups comparable (otherwise the group with the largest
     numbers decides the ranking). Compute once per database and keep the result."""
@@ -111,7 +115,8 @@ def compute_group_scales(database, hist_distance="emd", n_pairs=5000, seed=0):
     return {group: max(float(values.mean()), 1e-12) for group, values in d.items()}
 
 
-def group_distances_pairs(a, b, hist_distance="emd"):
+
+def group_distances_pairs(a, b, hist_distance=HISTOGRAM_DISTANCES):
     """Like group_distances, but for two matrices of equal shape (row against row)."""
     hist_fn = HISTOGRAM_DISTANCES[hist_distance]
     return {group: (euclidean if group == "scalars" else hist_fn)(a[:, cols], b[:, cols])
@@ -119,8 +124,7 @@ def group_distances_pairs(a, b, hist_distance="emd"):
 
 
 # --- Combining and ranking ---------------------------------------------------------------
-
-def compute_distances(query, database, scales, weights=None, hist_distance="emd"):
+def compute_distances(query, database, scales, weights=None, hist_distance=HISTOGRAM_DISTANCES):
     """Combined distance of the query to every database shape.
     Returns (total, parts): total is an array of n distances, parts the scaled
     per-group distances (useful to see WHY a shape matched)."""
@@ -147,7 +151,7 @@ def rank_matches(distances, k=None, threshold=None, exclude_index=None):
 
 
 def find_matches(query, database, names, classes, scales, weights=None,
-                 hist_distance="emd", k=10, threshold=None, exclude_index=None):
+                 hist_distance=HISTOGRAM_DISTANCES, k=10, threshold=None, exclude_index=None):
     """Everything in one call. Returns a list of dicts, best match first:
     {"index", "name", "class", "distance", "parts"}."""
     total, parts = compute_distances(query, database, scales, weights, hist_distance)
