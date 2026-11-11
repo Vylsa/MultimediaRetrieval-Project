@@ -15,8 +15,8 @@ SHEETS_DIR = os.path.join(PROJECT_ROOT, "sheets")
 DESCRIPTORS_FILE = os.path.join(SHEETS_DIR, "descriptors.xlsx")
 STATS_FILE = os.path.join(PROJECT_ROOT, "feature_stats.json")
 
-# DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
-# DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
+#DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
+#DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
 DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
 
 
@@ -48,7 +48,7 @@ TILE_BACKGROUND_COLOR = [0.95, 0.95, 0.95, 1]  # light grey, so the tiles are vi
 
 # Wireframe appearance (R, G, B, A) and line thickness in pixels
 WIREFRAME_COLOR = [0, 0, 0, 1]
-WIREFRAME_LINE_WIDTH = 5.0
+WIREFRAME_LINE_WIDTH = 1.0
 
 # Super/subsampling:
 MIN_VERTICES = 5000

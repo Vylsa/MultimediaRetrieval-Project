@@ -1,18 +1,21 @@
 '''Run this file to test the mesh resampling functionality. Set the MESH_PATH to the specified mesh and the OUTPUT_DIR to the folder where you want the resampled mesh to be saved.'''
 import os
+import sys
 
 import open3d as o3d
-
+from pathlib import Path
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(root_dir))
 from mesh_browser.mesh_utils import load_mesh, clean_mesh, resample_mesh, mesh_stats
 
-from mesh_browser.config import DATABASE_DIR
+from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR, REFINED_DATABASE_DIR
 
 
 
 
-MESH_PATH = os.path.join(DATABASE_DIR, "0_resampling_tests", "sphere.obj")
+MESH_PATH = os.path.join(DATABASE_DIR, "AircraftBuoyant", "unit_sphere.obj")
 
-OUTPUT_DIR = os.path.join(DATABASE_DIR, "0_resampling_tests")
+OUTPUT_DIR = os.path.join(REFINED_DATABASE_DIR, "0_resampling_tests")
 
 mesh = load_mesh(MESH_PATH)
 if mesh is None:

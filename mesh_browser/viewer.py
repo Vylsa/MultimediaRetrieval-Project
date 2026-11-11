@@ -66,7 +66,13 @@ class MeshViewer:
         #scene.add_geometry(MESH_NAME, mesh, self.mesh_material)
 
         if not self.compact:
-            wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(mesh)
+            wire_mesh = o3d.geometry.TriangleMesh(mesh)          # copy, so the original is untouched
+            if not wire_mesh.has_vertex_normals():
+                wire_mesh.compute_vertex_normals()
+            eps = 1e-3 * np.linalg.norm(bounds.get_extent())     # small, relative to mesh size
+            v = np.asarray(wire_mesh.vertices) + eps * np.asarray(wire_mesh.vertex_normals)
+            wire_mesh.vertices = o3d.utility.Vector3dVector(v)
+            wireframe = o3d.geometry.LineSet.create_from_triangle_mesh(wire_mesh)
             scene.add_geometry(WIREFRAME_NAME, wireframe, self.line_material)
             self._add_axes(bounds)
 
