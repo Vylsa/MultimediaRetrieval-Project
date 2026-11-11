@@ -95,13 +95,17 @@
 
 import open3d.visualization.gui as gui
 
+KNN_MODES = ["K nearest neighbors", "All within distance R"]
+
 
 class SidePanel:
     def __init__(self, em, display_modes, on_folder_selected,
-                 on_mesh_selected, on_display_mode_changed, tools):
+                 on_mesh_selected, on_display_mode_changed, tools, knn_settings=None):
         """tools: list of (name, title, button_text, on_clicked). Every tool gets a
-        title, a button and an info label, addressed later by its name."""
-        self.widget = gui.Vert(0.5 * em, gui.Margins(em, em, em, em))
+        title, a button and an info label, addressed later by its name.
+        knn_settings: (default K, default R) to show the k-d tree search settings, or None."""
+        # Scrollable, so all tools stay reachable when the window is not very tall
+        self.widget = gui.ScrollableVert(0.5 * em, gui.Margins(em, em, em, em))
         self._tool_buttons = {}
         self._tool_infos = {}
 
@@ -141,9 +145,41 @@ class SidePanel:
         self.info_label = gui.Label("")
         self.widget.add_child(self.info_label)
 
+        # Settings for the k-d tree search (used by the "find_knn" tool)
+        if knn_settings is not None:
+            self._add_knn_settings(em, *knn_settings)
+
         # Tools (analyzer, normalizer, descriptors, ...)
         for name, title, button_text, on_clicked in tools:
             self._add_tool(name, title, button_text, on_clicked)
+
+    def _add_knn_settings(self, em, default_k, default_r):
+        """Search mode (K nearest / within R) and the values of K and R."""
+        self.widget.add_child(gui.Label(""))   # spacing
+        self.widget.add_child(gui.Label("k-d tree search settings:"))
+
+        self.knn_mode_box = gui.Combobox()
+        for mode in KNN_MODES:
+            self.knn_mode_box.add_item(mode)
+        self.widget.add_child(self.knn_mode_box)
+
+        self.k_edit = gui.NumberEdit(gui.NumberEdit.INT)
+        self.k_edit.set_limits(1, 500)
+        self.k_edit.int_value = int(default_k)
+        self.r_edit = gui.NumberEdit(gui.NumberEdit.DOUBLE)
+        self.r_edit.set_limits(0.0, 100.0)
+        self.r_edit.double_value = float(default_r)
+
+        for label, edit in (("K:", self.k_edit), ("R:", self.r_edit)):
+            row = gui.Horiz(0.5 * em)
+            row.add_child(gui.Label(label))
+            row.add_child(edit)
+            self.widget.add_child(row)
+
+    def get_knn_settings(self):
+        """(mode, K, R), with mode "knn" or "range". Call on the main thread."""
+        mode = "range" if self.knn_mode_box.selected_index == 1 else "knn"
+        return mode, int(self.k_edit.int_value), float(self.r_edit.double_value)
 
     def _add_tool(self, name, title, button_text, on_clicked):
         self.widget.add_child(gui.Label(""))   # spacing

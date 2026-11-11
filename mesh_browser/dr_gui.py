@@ -11,6 +11,7 @@ exists, a separate process rebuilds the HTML and opens it.
 import os
 import subprocess
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -22,7 +23,11 @@ from .dr_paths import Variant, html_path, tsne_path
 TSNE_PERPLEXITY = 15
 TSNE_VARIANT = Variant(hellinger=True, best_shares=True)
 
-
+def _open_in_browser(path):
+    """Open a file in the default browser without blocking the GUI's main thread."""
+    uri = Path(path).resolve().as_uri()
+    threading.Thread(target=webbrowser.open, args=(uri,), daemon=True).start()
+    
 def open_tsne_map(perplexity=TSNE_PERPLEXITY, variant=TSNE_VARIANT):
     """Show the saved t-SNE scatterplot in the browser.
 
@@ -32,7 +37,7 @@ def open_tsne_map(perplexity=TSNE_PERPLEXITY, variant=TSNE_VARIANT):
     csv = tsne_path(perplexity, variant)
 
     if os.path.exists(html):
-        webbrowser.open(Path(html).resolve().as_uri())
+        _open_in_browser(html)
         return f"Opened t-SNE map (perplexity {perplexity}, {variant.name})."
 
     if os.path.exists(csv):
