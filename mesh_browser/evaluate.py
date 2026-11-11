@@ -137,7 +137,7 @@ def curve_area(tpr):
     return float(np.sum(np.diff(FPR_GRID) * (tpr[1:] + tpr[:-1]) / 2))
 
 
-def save_roc_plot(curves, path):
+def save_roc_plot(curves, path, aucs, macro_auc, micro_auc):
     """Left: ROC curves (linear axes). Right: same with a log FPR axis, which
     zooms in on the top of the ranking, where a user actually looks."""
     import plotly.graph_objects as go
@@ -145,15 +145,19 @@ def save_roc_plot(curves, path):
     macro = np.mean(list(curves.values()), axis=0)
     fig = make_subplots(rows=1, cols=2, subplot_titles=(
         "ROC curves", "Same, log FPR axis (top of the ranking)"))
+    fig.update_layout(title=f"AUROC: macro {macro_auc:.3f}, micro {micro_auc:.3f} "
+                            "(shaded: area under the macro-average curve)")
     for col in (1, 2):
         for c, tpr in curves.items():
-            fig.add_trace(go.Scatter(x=FPR_GRID, y=tpr, mode="lines", name=c,
+            fig.add_trace(go.Scatter(x=FPR_GRID, y=tpr, mode="lines",
+                                     name=f"{c} (AUROC {aucs[c]:.2f})",
                                      legendgroup=c, showlegend=(col == 1),
                                      opacity=0.35, line=dict(width=1)),
                           row=1, col=col)
         fig.add_trace(go.Scatter(x=FPR_GRID, y=macro, mode="lines",
-                                 name="macro average", legendgroup="macro",
-                                 showlegend=(col == 1),
+                                 name=f"macro average (AUROC {macro_auc:.3f})",
+                                 legendgroup="macro", showlegend=(col == 1),
+                                 fill="tozeroy", fillcolor="rgba(0,0,0,0.12)",
                                  line=dict(width=4, color="black")),
                       row=1, col=col)
         fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="chance",
@@ -229,7 +233,9 @@ def main():
     curves = roc_curves(labels, dist)
     macro_area = curve_area(np.mean(list(curves.values()), axis=0))
     if not args.no_plot:
-        save_roc_plot(curves, os.path.join(out, "eval_roc_curves.html"))
+        save_roc_plot(curves, os.path.join(out, "eval_roc_curves.html"),
+                      dict(zip(table["class"], table["auroc"])),
+                      table["auroc"].mean(), per_shape["auroc"].mean())
 
     print("\nGrand aggregates:")
     print(summary.to_string(index=False, float_format="{:.3f}".format))
