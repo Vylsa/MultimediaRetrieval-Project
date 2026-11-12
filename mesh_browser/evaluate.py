@@ -25,6 +25,7 @@ import pandas as pd
 from scipy.stats import rankdata
 
 from . import config
+from .knn import ShapeIndex, SINGLE_VALUE_FEATURES, HISTOGRAM_NAMES
 from .query import compute_distances
 from .search import SearchIndex
 
@@ -48,6 +49,38 @@ def full_distance_matrix(index):
                                        index.hist_distance)
         if (i + 1) % 500 == 0:
             print(f"  {i + 1}/{n}")
+    return dist
+
+
+def kdtree_distance_matrix(index):
+    """N x N distances from the k-d tree engine (built exactly as in app.py).
+    For each database shape we ask the tree for ALL n shapes, so the ranking is
+    complete, and write the returned distances into the matrix. Entries are mapped
+    back to rows via (class, name). The query's own entry may be in the result;
+    evaluate() removes it by index."""
+    n = len(index.names)
+    n_bins = (index.features.shape[1] - len(SINGLE_VALUE_FEATURES)) // len(HISTOGRAM_NAMES)
+    feature_names = SINGLE_VALUE_FEATURES + [f"{h}_{i}" for h in HISTOGRAM_NAMES
+                                             for i in range(n_bins)]
+    tree = ShapeIndex(index.names, index.classes, index.features, feature_names,
+                      weighted=config.WEIGHTED)
+
+    position = {(c, nm): j for j, (nm, c) in enumerate(zip(index.names, index.classes))}
+    if len(position) != n:
+        raise ValueError("Shape names are not unique within their class; "
+                         "cannot map k-d tree results back to rows.")
+
+    dist = np.full((n, n), np.inf)
+    for i in range(n):
+        query = tree.prepare_query(index.features[i])
+        for name, cls, d in tree.knn(query, n):         # (name, class, distance)
+            dist[i, position[(cls, name)]] = d
+        if (i + 1) % 500 == 0:
+            print(f"  {i + 1}/{n}")
+    missing = np.isinf(dist).sum()
+    if missing:
+        print(f"WARNING: {missing} (query, shape) pairs were not returned by the "
+              "k-d tree; AUROC is only valid for a complete ranking.")
     return dist
 
 
@@ -204,6 +237,8 @@ def main():
     parser.add_argument("--stats", default=STATS_FILE)
     parser.add_argument("--hist-distance", default="emd",
                         choices=["emd", "l1", "euclidean"])
+    parser.add_argument("--engine", default="emd", choices=["emd", "kdtree"],
+                        help="emd: group-scaled EMD search, kdtree: the k-d tree search")
     parser.add_argument("--no-plot", action="store_true")
     args = parser.parse_args()
 
@@ -215,8 +250,15 @@ def main():
     labels = np.array(index.classes, dtype=str)
     print(f"{len(names)} shapes, {len(np.unique(labels))} classes")
 
-    print("Computing the distance matrix with the engine...")
-    dist = full_distance_matrix(index)
+    print(f"Computing the distance matrix with the {args.engine} engine...")
+    if args.engine == "kdtree":
+        dist = kdtree_distance_matrix(index)
+    else:
+        dist = full_distance_matrix(index)
+    # Keep the outputs of different engines apart
+    tag = "" if args.engine == "emd" else "_" + args.engine
+    if args.engine == "emd" and args.hist_distance != "emd":
+        tag = "_" + args.hist_distance
 
     print("Evaluating every shape as a query...")
     per_shape, confusion = evaluate(names, labels, dist, args.k)
@@ -224,16 +266,16 @@ def main():
     summary = overall(per_shape, table, args.k)
 
     out = config.SHEETS_DIR
-    per_shape.to_csv(os.path.join(out, "eval_per_shape.csv"), index=False)
-    table.to_csv(os.path.join(out, "eval_per_class.csv"), index=False)
-    summary.to_csv(os.path.join(out, "eval_summary.csv"), index=False)
+    per_shape.to_csv(os.path.join(out, f"eval_per_shape{tag}.csv"), index=False)
+    table.to_csv(os.path.join(out, f"eval_per_class{tag}.csv"), index=False)
+    summary.to_csv(os.path.join(out, f"eval_summary{tag}.csv"), index=False)
     if not args.no_plot:
-        save_plot(table, args.k, os.path.join(out, "eval_per_class.html"))
+        save_plot(table, args.k, os.path.join(out, f"eval_per_class{tag}.html"))
 
     curves = roc_curves(labels, dist)
     macro_area = curve_area(np.mean(list(curves.values()), axis=0))
     if not args.no_plot:
-        save_roc_plot(curves, os.path.join(out, "eval_roc_curves.html"),
+        save_roc_plot(curves, os.path.join(out, f"eval_roc_curves{tag}.html"),
                       dict(zip(table["class"], table["auroc"])),
                       table["auroc"].mean(), per_shape["auroc"].mean())
 
@@ -242,9 +284,7 @@ def main():
     print_extremes(table)
     print(f"\nArea under the macro-average ROC curve: {macro_area:.3f} "
           "(should be close to the macro AUROC above)")
-    print(f"\nSaved to {out}: eval_per_shape.csv, eval_per_class.csv, "
-          "eval_summary.csv" + ("" if args.no_plot else
-          ", eval_per_class.html, eval_roc_curves.html"))
+    print(f"\nSaved to {out}: eval_*{tag}.csv" + ("" if args.no_plot else f" and eval_*{tag}.html"))
 
 
 if __name__ == "__main__":
