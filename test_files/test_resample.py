@@ -13,9 +13,9 @@ from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR, REFINED_D
 
 
 
-MESH_PATH = os.path.join(DATABASE_DIR, "AircraftBuoyant", "unit_sphere.obj")
+MESH_PATH = os.path.join(DATABASE_DIR, "ASimpleShapes", "cube.obj")
 
-OUTPUT_DIR = os.path.join(REFINED_DATABASE_DIR, "0_resampling_tests")
+OUTPUT_DIR = os.path.join(REFINED_DATABASE_DIR, "ASimpleShapes")
 
 mesh = load_mesh(MESH_PATH)
 if mesh is None:

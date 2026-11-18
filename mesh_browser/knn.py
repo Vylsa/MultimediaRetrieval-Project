@@ -23,7 +23,7 @@ import numpy as np
 from openpyxl import load_workbook
 from sklearn.neighbors import KDTree
 
-from .config import WEIGHTED
+from .config import WEIGHTED, DEFAULT_K
 
 
 
@@ -140,7 +140,7 @@ class ShapeIndex:
                    for i, d in zip(indices, distances) if self.names[i] != exclude]
         return sorted(results, key=lambda r: r[2])
 
-    def knn(self, query_vector, k=6, exclude=None):
+    def knn(self, query_vector, k=DEFAULT_K, exclude=None):
         """The k shapes nearest to the query vector. If the query shape is itself in the
         database, pass its name as exclude, so it is not returned as its own neighbor."""
         k_search = min(k + (1 if exclude else 0), len(self.names))
@@ -154,7 +154,7 @@ class ShapeIndex:
                                                     sort_results=True)
         return self._results(indices[0], distances[0], exclude)
 
-    def knn_by_name(self, name, k=6):
+    def knn_by_name(self, name, k=DEFAULT_K):
         """KNN for a shape from the database (the shape itself is left out)."""
         return self.knn(self.vector_of(name), k, exclude=name)
 
@@ -162,7 +162,7 @@ class ShapeIndex:
         """Range search for a shape from the database (the shape itself is left out)."""
         return self.range_search(self.vector_of(name), radius, exclude=name)
 
-    def brute_force_knn(self, query_vector, k=6, exclude=None):
+    def brute_force_knn(self, query_vector, k=DEFAULT_K, exclude=None):
         """The same KNN query by computing the distance to every shape (no tree).
         Used to check that the tree gives identical results, and to compare speed."""
         distances = np.linalg.norm(self.features - np.asarray(query_vector), axis=1)

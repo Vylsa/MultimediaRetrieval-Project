@@ -8,14 +8,14 @@ root_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(root_dir))
 from mesh_browser.mesh_utils import load_mesh, clean_mesh, normalize_mesh, resample_mesh, mesh_stats
 
-from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR
+from mesh_browser.config import DATABASE_DIR, NORMALIZED_DATABASE_DIR, REFINED_DATABASE_DIR
 
 
 
 
-MESH_PATH = os.path.join(DATABASE_DIR, "AircraftBuoyant", "unit_sphere.obj")
+MESH_PATH = os.path.join(REFINED_DATABASE_DIR, "ASimpleShapes", "cube.obj")
 
-OUTPUT_DIR = os.path.join(NORMALIZED_DATABASE_DIR, "0_normalizing_tests")
+OUTPUT_DIR = os.path.join(NORMALIZED_DATABASE_DIR, "ASimpleShapes")
 
 mesh = load_mesh(MESH_PATH)
 if mesh is None:

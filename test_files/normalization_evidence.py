@@ -29,7 +29,7 @@ sys.path.append(str(root_dir))
 
 from mesh_browser import config
 from mesh_browser.mesh_utils import (align_mesh, center_mesh, list_meshes, list_subfolders,
-                                     load_mesh, normalize_mesh, principal_axes)
+                                     load_mesh, normalize_mesh, principal_axes, principal_axes_areaweighted)
 
 AXIS_TOLERANCE_DEG = 1.0    # alignment counts as correct when the axis is within this angle
 MOMENT_TOLERANCE = 1e-6     # relative moments within this distance of 0 count as 0
@@ -53,7 +53,7 @@ def moments(mesh):
 
 def measure(mesh):
     """Alignment angles (degrees), moments and eigenvalue ratios of one mesh."""
-    eigenvalues, eigenvectors = principal_axes(np.asarray(mesh.vertices))
+    eigenvalues, eigenvectors = principal_axes_areaweighted(np.asarray(mesh.vertices), np.asarray(mesh.triangles))
     e1, e2 = eigenvectors[:, 0], eigenvectors[:, 1]
     angle_e1_x = np.degrees(np.arccos(np.clip(abs(e1[0]), 0, 1)))  # sign-free: e1 is a line
     angle_e2_y = np.degrees(np.arccos(np.clip(abs(e2[1]), 0, 1)))

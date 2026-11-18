@@ -413,11 +413,35 @@ def principal_axes(vertices):
     order = np.argsort(eigenvalues)[::-1]
     return eigenvalues[order], eigenvectors[:, order]
 
+def principal_axes_areaweighted(vertices, faces):
+    """Principal axes of the mesh surface, independent of how the vertices
+    are distributed. Each triangle is treated as uniformly filled and
+    weighted by its area. Returns eigenvalues (descending) and the
+    eigenvectors as columns."""
+    tri = vertices[faces]                          # (n, 3, 3)
+    a, b, c = tri[:, 0], tri[:, 1], tri[:, 2]
+    areas = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+    s = a + b + c
+
+    mean = (areas[:, None] * s / 3).sum(axis=0) / areas.sum()
+
+    # Exact second moment of a uniform triangle: (aa^T + bb^T + cc^T + ss^T) / 12
+    M = (np.einsum('n,ni,nj->ij', areas, a, a)
+         + np.einsum('n,ni,nj->ij', areas, b, b)
+         + np.einsum('n,ni,nj->ij', areas, c, c)
+         + np.einsum('n,ni,nj->ij', areas, s, s)) / 12.0
+    cov = M / areas.sum() - np.outer(mean, mean)
+
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    order = np.argsort(eigvals)[::-1]
+    return eigvals[order], eigvecs[:, order]
 
 def align_mesh(mesh):
     """Step 2: rotate the mesh so the major eigenvector lies along x and the
     medium one along y. Expects a centered mesh."""
-    _, eigvecs = principal_axes(np.asarray(mesh.vertices))
+    eigvals, eigvecs = principal_axes_areaweighted(np.asarray(mesh.vertices), np.asarray(mesh.triangles))
+    if (eigvals[0] - eigvals[2]) / eigvals[0] < 1e-3:
+        return mesh
     e1, e2 = eigvecs[:, 0], eigvecs[:, 1]
     # Use the cross product instead of the third eigenvector, so the frame is
     # always right-handed (a pure rotation, never an accidental mirror)

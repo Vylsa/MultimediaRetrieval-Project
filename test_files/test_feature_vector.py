@@ -13,7 +13,7 @@ from mesh_browser.mesh_utils import load_mesh
 from mesh_browser.descriptors1 import MeshDescriptors, FEATURE_COLUMNS, feature_vector
 from mesh_browser.descriptors import DISTRIBUTION_NAMES, N_BINS
 
-file_path = r"ShapeDatabase_INFOMR-master/AircraftBuoyant/unit_sphere.obj"  
+file_path = r"normalized_database/ASimpleShapes/cube.obj"  
 
 
 if __name__ == "__main__":
