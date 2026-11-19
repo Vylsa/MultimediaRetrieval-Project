@@ -21,7 +21,8 @@ import numpy as np
 from openpyxl import load_workbook
 from sklearn.neighbors import KDTree
 
-from .config import WEIGHTED, TEST_CLASSES, FEATURES_PATH, DEFAULT_VARIANT
+from .config import WEIGHTED, TEST_CLASSES, DEFAULT_K
+from .dr_paths import Variant
 from .dr_features import (apply_feature_transform, fit_feature_transform,
                           load_feature_transform, save_feature_transform, feature_transform_path)
 
