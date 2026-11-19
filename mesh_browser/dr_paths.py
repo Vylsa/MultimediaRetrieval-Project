@@ -47,6 +47,12 @@ def best_shares_path(hellinger=False):
     return os.path.join(config.SHEETS_DIR, f"best_shares{suffix}.json")
 
 
+def feature_transform_path(variant=Variant()):
+    """JSON file storing the fitted per-column multipliers and Hellinger flag."""
+    return os.path.join(config.SHEETS_DIR,
+                        f"feature_transform{variant.tag}.json")
+
+
 def tsne_path(perplexity, variant=Variant()):
     """CSV with the 2D map (name, class, x, y, ...)."""
     return os.path.join(config.SHEETS_DIR,

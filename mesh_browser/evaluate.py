@@ -1,15 +1,14 @@
 """Step 9: evaluate the shape search engine (query-by-example distance).
 
-Every database shape is used as a query against all OTHER database shapes, with
-the engine itself (SearchIndex + query.compute_distances), so the numbers describe
-the real search. The query's stored (already standardized) feature vector is used,
-which is exactly the row the engine would compute for that shape.
+Every database shape is used as a query against all OTHER database shapes, using
+the exact same feature transform and distance metric as t-SNE and ShapeIndex.
 
 Metrics per query (the query itself is never in its own ranking):
   AUROC        probability that a random same-class shape is ranked closer
                than a random different-class shape (0.5 = chance, 1 = perfect).
                Uses the whole ranking, so it does not depend on K.
-  precision@K  fraction of the K nearest shapes that share the query's class.
+  precision@K  fraction of the K nearest shapes that share the query's class
+               (equals kNN purity when K = 10).
 
 Aggregation: per class (mean over its shapes), micro (every shape counts once)
 and macro (every class counts once).
@@ -25,22 +24,23 @@ import pandas as pd
 from scipy.stats import rankdata
 
 from . import config
+from .dr_features import (GROUPS_11, default_shares, fit_feature_transform,
+                          load_feature_table)
+from .dr_paths import Variant
 from .knn import ShapeIndex, SINGLE_VALUE_FEATURES, HISTOGRAM_NAMES
 from .query import compute_distances
 from .search import SearchIndex
 
-# Same files as the GUI (see _work_find in app.py).
 FEATURE_FILE = config.STANDARDIZED_FILE
 SHEET = config.STANDARDIZED_SHEET
 STATS_FILE = config.STATS_FILE
 
-# Common false-positive-rate grid, so ROC curves of different queries can be averaged.
 FPR_GRID = np.linspace(0, 1, 201)
 
 
 # ----------------------------------------------------------------- distances
 def full_distance_matrix(index):
-    """N x N combined distances, one engine query per database shape."""
+    """N x N combined distances, one legacy EMD engine query per database shape."""
     n = len(index.names)
     dist = np.empty((n, n))
     for i in range(n):
@@ -52,27 +52,30 @@ def full_distance_matrix(index):
     return dist
 
 
-def kdtree_distance_matrix(index):
-    """N x N distances from the k-d tree engine (built exactly as in app.py).
-    For each database shape we ask the tree for ALL n shapes, so the ranking is
-    complete, and write the returned distances into the matrix. Entries are mapped
-    back to rows via (class, name). The query's own entry may be in the result;
-    evaluate() removes it by index."""
-    n = len(index.names)
-    n_bins = (index.features.shape[1] - len(SINGLE_VALUE_FEATURES)) // len(HISTOGRAM_NAMES)
+def bruteforce_distance_matrix(tree):
+    """N x N Euclidean distances on the shared transformed feature matrix."""
+    sq = (tree.features ** 2).sum(axis=1)
+    d2 = np.maximum(sq[:, None] + sq[None, :] - 2 * tree.features @ tree.features.T, 0.0)
+    return np.sqrt(d2)
+
+
+def kdtree_distance_matrix(names, classes, raw_features, transform_spec):
+    """N x N distances from the k-d tree engine (built with the shared transform)."""
+    n = len(names)
+    n_bins = (raw_features.shape[1] - len(SINGLE_VALUE_FEATURES)) // len(HISTOGRAM_NAMES)
     feature_names = SINGLE_VALUE_FEATURES + [f"{h}_{i}" for h in HISTOGRAM_NAMES
                                              for i in range(n_bins)]
-    tree = ShapeIndex(index.names, index.classes, index.features, feature_names,
-                      weighted=config.WEIGHTED)
+    tree = ShapeIndex(names, classes, raw_features, feature_names,
+                      weighted=config.WEIGHTED, transform_spec=transform_spec)
 
-    position = {(c, nm): j for j, (nm, c) in enumerate(zip(index.names, index.classes))}
+    position = {(c, nm): j for j, (nm, c) in enumerate(zip(tree.names, tree.classes))}
     if len(position) != n:
         raise ValueError("Shape names are not unique within their class; "
                          "cannot map k-d tree results back to rows.")
 
     dist = np.full((n, n), np.inf)
     for i in range(n):
-        query = tree.prepare_query(index.features[i])
+        query = tree.prepare_query(raw_features[i])
         for name, cls, d in tree.knn(query, n):         # (name, class, distance)
             dist[i, position[(cls, name)]] = d
         if (i + 1) % 500 == 0:
@@ -81,7 +84,7 @@ def kdtree_distance_matrix(index):
     if missing:
         print(f"WARNING: {missing} (query, shape) pairs were not returned by the "
               "k-d tree; AUROC is only valid for a complete ranking.")
-    return dist
+    return dist, tree
 
 
 # ----------------------------------------------------------------- metrics
@@ -143,10 +146,7 @@ def overall(per_shape, table, k):
 
 # ------------------------------------------------------------- ROC curves
 def roc_curves(labels, dist):
-    """Mean ROC curve per class. One query's curve is obtained by walking down its
-    ranking (K = 1, 2, ..., N-1): TPR = share of the same-class shapes found so far,
-    FPR = share of the other-class shapes returned so far. Curves of the queries of
-    one class are averaged on a common FPR grid."""
+    """Mean ROC curve per class."""
     n = len(labels)
     sums = {c: np.zeros(len(FPR_GRID)) for c in np.unique(labels)}
     counts = Counter()
@@ -171,8 +171,6 @@ def curve_area(tpr):
 
 
 def save_roc_plot(curves, path, aucs, macro_auc, micro_auc):
-    """Left: ROC curves (linear axes). Right: same with a log FPR axis, which
-    zooms in on the top of the ranking, where a user actually looks."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     macro = np.mean(list(curves.values()), axis=0)
@@ -237,28 +235,46 @@ def main():
     parser.add_argument("--stats", default=STATS_FILE)
     parser.add_argument("--hist-distance", default="emd",
                         choices=["emd", "l1", "euclidean"])
-    parser.add_argument("--engine", default="emd", choices=["emd", "kdtree"],
-                        help="emd: group-scaled EMD search, kdtree: the k-d tree search")
+    parser.add_argument("--engine", default="kdtree",
+                        choices=["kdtree", "bruteforce", "emd"],
+                        help="kdtree: k-d tree on shared transform; "
+                             "bruteforce: linear scan on shared transform; "
+                             "emd: legacy EMD comparison")
+    parser.add_argument("--baseline-11", action="store_true",
+                        help="use 11 equal groups (6 scalars + 5 raw histograms)")
     parser.add_argument("--no-plot", action="store_true")
     args = parser.parse_args()
 
-    print("Loading the search index...")
-    index = SearchIndex(args.features, args.sheet, args.stats,
-                        exclude_classes=config.TEST_CLASSES,
-                        hist_distance=args.hist_distance)
-    names = np.array(index.names, dtype=str)
-    labels = np.array(index.classes, dtype=str)
+    print("Loading feature table (excluding TEST_CLASSES)...")
+    info, raw_features = load_feature_table(args.features, sheet=args.sheet)
+    names = info["name"].astype(str).to_numpy()
+    labels = info["class"].astype(str).to_numpy()
     print(f"{len(names)} shapes, {len(np.unique(labels))} classes")
 
-    print(f"Computing the distance matrix with the {args.engine} engine...")
-    if args.engine == "kdtree":
-        dist = kdtree_distance_matrix(index)
-    else:
+    if args.engine == "emd":
+        print("Loading legacy EMD search index...")
+        index = SearchIndex(args.features, args.sheet, args.stats,
+                            exclude_classes=config.TEST_CLASSES,
+                            hist_distance=args.hist_distance)
         dist = full_distance_matrix(index)
-    # Keep the outputs of different engines apart
-    tag = "" if args.engine == "emd" else "_" + args.engine
-    if args.engine == "emd" and args.hist_distance != "emd":
-        tag = "_" + args.hist_distance
+        tag = "_emd" if args.hist_distance == "emd" else f"_emd_{args.hist_distance}"
+    else:
+        if args.baseline_11:
+            spec = fit_feature_transform(
+                raw_features,
+                variant=Variant(scale_blocks=True, hellinger=False),
+                shares=default_shares(GROUPS_11),
+                groups=GROUPS_11,
+            )
+            tag = "_baseline11"
+        else:
+            spec = None  # ShapeIndex loads/fits Variant(hellinger=True, best_shares=True)
+            tag = "" if args.engine == "kdtree" else f"_{args.engine}"
+
+        print(f"Computing the distance matrix with the {args.engine} engine...")
+        dist, tree = kdtree_distance_matrix(names, labels, raw_features, spec)
+        if args.engine == "bruteforce":
+            dist = bruteforce_distance_matrix(tree)
 
     print("Evaluating every shape as a query...")
     per_shape, confusion = evaluate(names, labels, dist, args.k)

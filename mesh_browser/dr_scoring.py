@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .dr_features import (GROUPS, N_SCALARS, group_scales, load_feature_table,
+from .dr_features import (GROUPS, GROUPS_11, N_SCALARS, apply_feature_transform,
+                          default_shares, fit_feature_transform, group_scales,
                           transform_features)
 from .dr_paths import Variant, class_purity_path, tsne_path
 from .map_eval import mean_average_precision
@@ -54,7 +55,7 @@ def per_shape_purity(D, labels, k=K_EVAL):
     """
     D = D.copy()
     np.fill_diagonal(D, np.inf)  # a shape is not its own neighbour
-    idx = np.argpartition(D, k, axis=1)[:, :k]
+    idx = np.argpartition(D, kth=range(k), axis=1)[:, :k]
     return (labels[idx] == labels[:, None]).mean(axis=1)
 
 
@@ -81,7 +82,7 @@ def class_table(labels, names, **per_shape):
 # ------------------------------------------------------------ evaluation
 
 def evaluate_groups(X, labels, names, shares):
-    """Print kNN purity per group (raw and Hellinger) and per class."""
+    """Print kNN purity per group, the 11-group baseline, and 6-group variants."""
     print(f"kNN purity (K={K_EVAL}), {len(X)} shapes, "
           f"{labels.max() + 1} classes; chance level {chance_purity(labels):.3f}")
     variants = {
@@ -93,14 +94,29 @@ def evaluate_groups(X, labels, names, shares):
         row = "".join(f"{knn_purity(m[name], labels):15.3f}"
                       for m in variants.values())
         print(f"  {name:8s}{row}")
+
+    # Baseline comparison: 11 equal groups (6 individual scalars + 5 raw histograms)
+    spec_11 = fit_feature_transform(
+        X, variant=Variant(scale_blocks=True, hellinger=False),
+        shares=default_shares(GROUPS_11), groups=GROUPS_11
+    )
+    D_11 = squared_distances(apply_feature_transform(X, spec_11))
+    print(f"\n  11-group equal (raw, knn.py baseline): "
+          f"purity {knn_purity(D_11, labels):.3f}, "
+          f"mAP {mean_average_precision(D_11, labels):.4f}")
+
     equal = {name: 1 / len(GROUPS) for name in GROUPS}
     for label, mats in variants.items():
-        print(f"  all groups, {label}: equal shares "
-              f"{knn_purity(combine(mats, equal), labels):.3f}, current shares "
-              f"{knn_purity(combine(mats, shares), labels):.3f}")
+        D_eq = combine(mats, equal)
+        D_cur = combine(mats, shares)
+        print(f"  6-group {label:9s}: "
+              f"equal shares purity {knn_purity(D_eq, labels):.3f} "
+              f"(mAP {mean_average_precision(D_eq, labels):.4f}), "
+              f"current shares purity {knn_purity(D_cur, labels):.3f} "
+              f"(mAP {mean_average_precision(D_cur, labels):.4f})")
 
-    # per class, for the raw vector with the current shares
-    ps = per_shape_purity(combine(variants["raw"], shares), labels)
+    # per class, for the Hellinger vector with the current shares
+    ps = per_shape_purity(combine(variants["Hellinger"], shares), labels)
     table = class_table(labels, names, purity=ps)
     os.makedirs(config.SHEETS_DIR, exist_ok=True)
     out = class_purity_path()
