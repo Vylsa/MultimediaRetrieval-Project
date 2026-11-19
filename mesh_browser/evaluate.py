@@ -170,34 +170,191 @@ def curve_area(tpr):
     return float(np.sum(np.diff(FPR_GRID) * (tpr[1:] + tpr[:-1]) / 2))
 
 
+# def save_roc_plot(curves, path, aucs, macro_auc, micro_auc):
+#     import plotly.graph_objects as go
+#     from plotly.subplots import make_subplots
+#     macro = np.mean(list(curves.values()), axis=0)
+#     fig = make_subplots(rows=1, cols=2, subplot_titles=(
+#         "ROC curves", "Same, log FPR axis (top of the ranking)"))
+#     fig.update_layout(title=f"AUROC: macro {macro_auc:.3f}, micro {micro_auc:.3f} "
+#                             "(shaded: area under the macro-average curve)")
+#     for col in (1, 2):
+#         for c, tpr in curves.items():
+#             fig.add_trace(go.Scatter(x=FPR_GRID, y=tpr, mode="lines",
+#                                      name=f"{c} (AUROC {aucs[c]:.2f})",
+#                                      legendgroup=c, showlegend=(col == 1),
+#                                      opacity=0.35, line=dict(width=1)),
+#                           row=1, col=col)
+#         fig.add_trace(go.Scatter(x=FPR_GRID, y=macro, mode="lines",
+#                                  name=f"macro average (AUROC {macro_auc:.3f})",
+#                                  legendgroup="macro", showlegend=(col == 1),
+#                                  fill="tozeroy", fillcolor="rgba(0,0,0,0.12)",
+#                                  line=dict(width=4, color="black")),
+#                       row=1, col=col)
+#         fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="chance",
+#                                  legendgroup="chance", showlegend=(col == 1),
+#                                  line=dict(width=2, dash="dash", color="grey")),
+#                       row=1, col=col)
+#     fig.update_xaxes(title_text="False positive rate", row=1, col=1)
+#     fig.update_xaxes(title_text="False positive rate (log)", type="log",
+#                      range=[np.log10(0.005), 0], row=1, col=2)
+#     fig.update_yaxes(title_text="True positive rate (recall)")
+#     fig.write_html(path)
+
 def save_roc_plot(curves, path, aucs, macro_auc, micro_auc):
+    """Left: ROC curves (linear axes). Right: same with a log FPR axis, which
+    zooms in on the top of the ranking, where a user actually looks.
+
+    Highlights top-3 and bottom-3 classes by AUROC using distinct shades per
+    class (so rank order is clear), and groups all remaining classes under a
+    single muted color for readability.
+    """
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+
+    ranked_classes = sorted(
+        [c for c in curves if c in aucs],
+        key=lambda c: aucs[c],
+        reverse=True,
+    )
+    top3_list = ranked_classes[:3]
+    bottom3_list = ranked_classes[-3:] if len(ranked_classes) > 3 else []
+    top3_set = set(top3_list)
+    bottom3_set = set(bottom3_list)
+
+    # Distinct shades from #1 to #3 (best -> 3rd best) and worst-3 to worst
+    TOP_COLORS = ["#0b5394", "#1b9e77", "#66c2a5"]     # deep blue -> teal -> mint
+    BOTTOM_COLORS = ["#a50f15", "#d95f02", "#fdae61"]  # dark red -> burnt orange -> amber
+    COLOR_OTHER = "rgba(150, 160, 175, 0.25)"
+
+    top_style = {
+        c: (TOP_COLORS[idx % len(TOP_COLORS)], idx + 1)
+        for idx, c in enumerate(top3_list)
+    }
+    bottom_style = {
+        c: (BOTTOM_COLORS[idx % len(BOTTOM_COLORS)], len(ranked_classes) - len(bottom3_list) + idx + 1)
+        for idx, c in enumerate(bottom3_list)
+    }
+
     macro = np.mean(list(curves.values()), axis=0)
     fig = make_subplots(rows=1, cols=2, subplot_titles=(
         "ROC curves", "Same, log FPR axis (top of the ranking)"))
-    fig.update_layout(title=f"AUROC: macro {macro_auc:.3f}, micro {micro_auc:.3f} "
-                            "(shaded: area under the macro-average curve)")
+    fig.update_layout(
+        title=(
+            f"AUROC: macro {macro_auc:.3f}, micro {micro_auc:.3f} "
+            "(shaded: area under the macro-average curve)"
+        ),
+        hovermode="closest",
+    )
+
     for col in (1, 2):
-        for c, tpr in curves.items():
-            fig.add_trace(go.Scatter(x=FPR_GRID, y=tpr, mode="lines",
-                                     name=f"{c} (AUROC {aucs[c]:.2f})",
-                                     legendgroup=c, showlegend=(col == 1),
-                                     opacity=0.35, line=dict(width=1)),
-                          row=1, col=col)
-        fig.add_trace(go.Scatter(x=FPR_GRID, y=macro, mode="lines",
-                                 name=f"macro average (AUROC {macro_auc:.3f})",
-                                 legendgroup="macro", showlegend=(col == 1),
-                                 fill="tozeroy", fillcolor="rgba(0,0,0,0.12)",
-                                 line=dict(width=4, color="black")),
-                      row=1, col=col)
-        fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="chance",
-                                 legendgroup="chance", showlegend=(col == 1),
-                                 line=dict(width=2, dash="dash", color="grey")),
-                      row=1, col=col)
+        other_added = False
+        # Draw muted "other" curves first so highlighted top/bottom curves stay on top
+        for c in ranked_classes:
+            if c in top3_set or c in bottom3_set:
+                continue
+            tpr = curves[c]
+            score = aucs[c]
+            fig.add_trace(
+                go.Scatter(
+                    x=FPR_GRID,
+                    y=tpr,
+                    mode="lines",
+                    name="Other classes",
+                    legendgroup="other_classes",
+                    showlegend=(col == 1 and not other_added),
+                    line=dict(width=1, color=COLOR_OTHER),
+                    hovertemplate=(
+                        f"<b>{c}</b> (AUROC {score:.2f})<br>"
+                        "FPR: %{x:.3f}<br>TPR: %{y:.3f}<extra></extra>"
+                    ),
+                ),
+                row=1,
+                col=col,
+            )
+            other_added = True
+
+        # Draw top-3 in rank order (#1, #2, #3)
+        for c in top3_list:
+            color, rank_num = top_style[c]
+            score = aucs[c]
+            fig.add_trace(
+                go.Scatter(
+                    x=FPR_GRID,
+                    y=curves[c],
+                    mode="lines",
+                    name=f"#{rank_num} Top: {c} (AUROC {score:.2f})",
+                    legendgroup=f"top_{c}",
+                    showlegend=(col == 1),
+                    line=dict(width=2.5, color=color),
+                    hovertemplate=(
+                        f"<b>#{rank_num} Top: {c}</b> (AUROC {score:.2f})<br>"
+                        "FPR: %{x:.3f}<br>TPR: %{y:.3f}<extra></extra>"
+                    ),
+                ),
+                row=1,
+                col=col,
+            )
+
+        # Draw bottom-3 in rank order
+        for c in bottom3_list:
+            color, rank_num = bottom_style[c]
+            score = aucs[c]
+            fig.add_trace(
+                go.Scatter(
+                    x=FPR_GRID,
+                    y=curves[c],
+                    mode="lines",
+                    name=f"#{rank_num} Bottom: {c} (AUROC {score:.2f})",
+                    legendgroup=f"bot_{c}",
+                    showlegend=(col == 1),
+                    line=dict(width=2.5, color=color),
+                    hovertemplate=(
+                        f"<b>#{rank_num} Bottom: {c}</b> (AUROC {score:.2f})<br>"
+                        "FPR: %{x:.3f}<br>TPR: %{y:.3f}<extra></extra>"
+                    ),
+                ),
+                row=1,
+                col=col,
+            )
+
+        fig.add_trace(
+            go.Scatter(
+                x=FPR_GRID,
+                y=macro,
+                mode="lines",
+                name=f"macro average (AUROC {macro_auc:.3f})",
+                legendgroup="macro",
+                showlegend=(col == 1),
+                fill="tozeroy",
+                fillcolor="rgba(0,0,0,0.12)",
+                line=dict(width=4, color="black"),
+            ),
+            row=1,
+            col=col,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[0, 1],
+                y=[0, 1],
+                mode="lines",
+                name="chance",
+                legendgroup="chance",
+                showlegend=(col == 1),
+                line=dict(width=2, dash="dash", color="grey"),
+            ),
+            row=1,
+            col=col,
+        )
+
     fig.update_xaxes(title_text="False positive rate", row=1, col=1)
-    fig.update_xaxes(title_text="False positive rate (log)", type="log",
-                     range=[np.log10(0.005), 0], row=1, col=2)
+    fig.update_xaxes(
+        title_text="False positive rate (log)",
+        type="log",
+        range=[np.log10(0.005), 0],
+        row=1,
+        col=2,
+    )
     fig.update_yaxes(title_text="True positive rate (recall)")
     fig.write_html(path)
 
