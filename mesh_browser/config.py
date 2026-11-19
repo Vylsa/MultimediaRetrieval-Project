@@ -58,7 +58,7 @@ TARGET_VERTICES = 7500
 SYNC_CAMERAS = True    # rotate all result tiles together
 
 # K-Nearest-Neighbors
-DEFAULT_K = 6
+DEFAULT_K = 5
 DEFAULT_RANGE = 1.5
 
 WEIGHTED = True               # True: every feature counts equally; False: plain L2

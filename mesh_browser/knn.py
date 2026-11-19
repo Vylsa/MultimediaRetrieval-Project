@@ -21,10 +21,11 @@ import numpy as np
 from openpyxl import load_workbook
 from sklearn.neighbors import KDTree
 
-from .config import DEFAULT_K, TEST_CLASSES, WEIGHTED
+from .config import WEIGHTED, TEST_CLASSES, FEATURES_PATH, DEFAULT_VARIANT
 from .dr_features import (apply_feature_transform, fit_feature_transform,
-                          load_feature_transform, save_feature_transform)
-from .dr_paths import Variant, feature_transform_path
+                          load_feature_transform, save_feature_transform, feature_transform_path)
+
+
 
 FEATURES_PATH = os.path.join("sheets", "normalized_features.xlsx")
 DEFAULT_VARIANT = Variant(hellinger=True, best_shares=True)
@@ -43,6 +44,8 @@ def resolve_features_path(path=None):
 SINGLE_VALUE_FEATURES = ["area", "compactness", "rectangularity",
                          "convexity", "diameter", "eccentricity"]
 HISTOGRAM_NAMES = ["A3", "D1", "D2", "D3", "D4"]
+
+
 
 
 def load_feature_database(path=None, sheet="zscore", exclude_classes=TEST_CLASSES):
