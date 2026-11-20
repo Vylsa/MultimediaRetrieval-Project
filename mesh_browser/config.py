@@ -15,9 +15,12 @@ SHEETS_DIR = os.path.join(PROJECT_ROOT, "sheets")
 DESCRIPTORS_FILE = os.path.join(SHEETS_DIR, "descriptors.xlsx")
 STATS_FILE = os.path.join(PROJECT_ROOT, "feature_stats.json")
 
-#DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
+
+# Directory which will be shown in the file dialog when opening meshes. Also used in multiple test scripts so we can run them on different databases.
+
+DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
 #DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
-DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
+#DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
 
 
 REFINED_DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
@@ -62,6 +65,7 @@ DEFAULT_K = 5
 DEFAULT_RANGE = 1.5
 
 WEIGHTED = True               # True: every feature counts equally; False: plain L2
+
 STANDARDIZED_FILE = os.path.join(SHEETS_DIR, "normalized_features.xlsx")
 STANDARDIZED_SHEET = "zscore"  # the sheet inside the workbook with the z-scores
 
