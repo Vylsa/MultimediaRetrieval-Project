@@ -23,3 +23,6 @@ There are multiple buttons in the UI:
 - Find similar shapes: the query system from step 4
 - Find similar shapes (kdtree): the query system using the kdtree
 - Show t-SNE map: Shows the t-SNE map in a separate internet window - it does not compute it, rather show what's been precomputed
+
+To run our code you need to have a few libraries installed. We have compiled them in requirements.txt. You can run this using this command:
+pip install -r requirements.txt
