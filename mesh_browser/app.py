@@ -196,6 +196,8 @@ class MeshBrowserApp:
         self._running.discard(name)
         self.panel.set_tool_enabled(name, True)
         self.panel.set_tool_info(name, message)
+        if name in ("find", "find_knn"):
+            self.window.set_needs_layout()
         self.window.post_redraw()
         if name in ("find", "find_knn") and self.last_matches:
             self._show_results()
@@ -349,16 +351,6 @@ class MeshBrowserApp:
         self.panel.set_tool_info("tsne", open_tsne_map())
         self.window.post_redraw()
 
-    # def _show_results(self):
-    #     """Main thread: fill the results strip from the last search."""
-    #     results = []
-    #     for rank, m in enumerate(self.last_matches[:config.STRIP_COUNT], start=1):
-    #         result_mesh = load_mesh(os.path.join(config.NORMALIZED_DATABASE_DIR,
-    #                                              m["class"], m["name"]))
-    #         caption = (f"#{rank}  {m['distance']:.3f}\n{m['class']}\n"
-    #                    f"{os.path.splitext(m['name'])[0]}")
-    #         results.append((result_mesh, caption))
-    #     self.strip.show(self.last_query_mesh, results)
     def _show_results(self):
         """Main thread: fill the results strip from the last search."""
         norm_dir = Path(config.NORMALIZED_DATABASE_DIR)
