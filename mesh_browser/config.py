@@ -18,9 +18,9 @@ STATS_FILE = os.path.join(PROJECT_ROOT, "feature_stats.json")
 
 # Directory which will be shown in the file dialog when opening meshes. Also used in multiple test scripts so we can run them on different databases.
 
-DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
+#DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master")
 #DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
-#DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
+DATABASE_DIR = os.path.join(PROJECT_ROOT, "normalized_database")
 
 
 REFINED_DATABASE_DIR = os.path.join(PROJECT_ROOT, "ShapeDatabase_INFOMR-master_refined")
