@@ -9,7 +9,9 @@ DATABASE_DIR is the only database which meshes can be shown in the UI. If you wa
 
 We recommend having a normalized database in there for the query viewer to work best. Either that or run the normalization button as explained below.
 
-In this config file, the resampling settings can be adjusted, as well as the settings for the K nearest neighbors search.
+The feature database is already included in this github repository, so they should not have to be recomputed.
+
+In the config file, the resampling settings can be adjusted, as well as the settings for the K nearest neighbors search.
 
 In the UI you can select subfolders of the database and any of their meshes, and change the display mode.
 
