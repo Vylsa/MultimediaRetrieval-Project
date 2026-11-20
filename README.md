@@ -1,13 +1,13 @@
 Instructions for running the project:
 
-The UI can be started by running main.py. Before doing this, it is important that the database folder(s) are in the root folder of the project. In case there are multiple databases available (we have the raw database, the resampled database, and the normalized database) the database to be shown in the UI can be set in config.py. 
+The UI can be started by running main.py. Before doing this, it is important that the database folder(s) are in the root folder of the project. In case there are multiple databases available (we have the raw database, the resampled database, and the normalized database) the database to be shown in the UI can be set in config.py, which can be found in the mesh_browser folder. 
 - DATABASE_DIR for the raw database
 - REFINED_DATABASE_DIR for the resampled database
 - NORMALIZED_DATABASE_DIR for the normalized database
 
-DATABASE_DIR is the only database which meshes can be shown in the UI. If you want to see meshes after resampling or normalization, change the DATABASE_DIR variable to either one of those databases (you can do this simply by commenting out the current "active" DATABASE_DIR and uncommenting whichever one you want to see).
+DATABASE_DIR is the only database which meshes can be shown in the UI. If you want to see meshes after resampling or normalization, change the DATABASE_DIR variable to either one of those databases (you can do this simply by commenting out the current "active" DATABASE_DIR and uncommenting whichever one you want to see). Those databases do have to be in the project for this of course.
 
-We recommend having a normalized database in there for the query viewer to work best. Either that or run the normalization button as explained below.
+We recommend having a normalized database in there for the query viewer to work best. Either download it from https://drive.google.com/file/d/1FCpEXWQeYVWjBCnyhyetGPgo53l4e2XB/view?usp=sharing or run the normalization button as explained below.
 
 The feature database is already included in this github repository, so they should not have to be recomputed.
 
